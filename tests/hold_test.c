@@ -78,6 +78,26 @@ int main(void)
     blocks(0, 4);
     blocks(1u << 7, 4);
     check("after a panic: the key latches anew (nothing stale)", gated(c4) == 1u);
+    {   /* a MONO track (3OSC BASS: LEGATO, LOW priority): one note latched at a time; a higher key takes over */
+        uint32_t g4 = kb_map(&inst, 14), k;
+        for (k = 0; k < NVOICE; k++)
+            inst.v[k].active = 0;
+        for (i = 0; i < ENGINES[ENGI_DRONE]->npresets && !str_eq(ENGINES[ENGI_DRONE]->presets[i].name, "3OSC BASS"); i++)
+            ;
+        for (k = 0; k < P_E0; k++) inst.p[k] = TP[k].def;
+        host_preset(&inst, ENGI_DRONE, i);
+        inst.p[P_AHOLD] = 1;
+        blocks(0, 8);
+        blocks(1u << 7, 4);
+        blocks(0, 40);
+        blocks(1u << 14, 4);
+        blocks(0, 40);
+        check("MONO, LOW priority: a higher key takes over the latched note", inst.p[P_PRIO] == 1 && gated(g4) == 1u &&
+              gated(c4) == 0u);
+        blocks(1u << 14, 4);
+        blocks(0, 40);
+        check("MONO: the latched key again lets it go, nothing latched under it sounds", gated(g4) == 0u && gated(c4) == 0u);
+    }
     printf("hold: %s\n", bad ? "FAILED" : "all ok");
     return bad != 0;
 }

@@ -609,7 +609,9 @@ static __attribute__((noinline)) void cin_keep(track_t *t, uint32_t note, uint32
 }
 
 /* HOLD with the ARP off (the DRONE fork: ARP 2 > HOLD ON, ARP MODE OFF): a key latches its note, the same key again
- * lets it go; letting go of a key does nothing. HOLD off, the ARP on, or a panic: every latched note lets go
+ * lets it go; letting go of a key does nothing. On a MONO / LEGATO / UNISON track one note is latched at a time: a
+ * new key takes over (legato, as a held key would) and the note before lets go, so a priority (LOW, HIGH) never
+ * leaves a new key silent under an old latched one. HOLD off, the ARP on, or a panic: every latched note lets go
  * (hold_block). A bit per note and track */
 static uint32_t hold_lat[NTRK][4];
 static int hold_on(const track_t *t) { return t->p[P_AHOLD] && !t->p[P_AMODE]; }
@@ -632,14 +634,20 @@ static void hold_block(track_t *t, int panic)
 static void input_on(track_t *t, uint32_t note, uint32_t vel)
 {
     last_note = (uint8_t)note;
+    uint32_t prev[4] = {0, 0, 0, 0}, w, b;          /* HOLD on a mono track: the latched notes this one replaces */
     if (hold_on(t) && note < 128u) {                /* HOLD: the second press of a latched note lets it go */
-        uint32_t *w = &hold_lat[trk_index(t)][note >> 5];
-        if ((*w >> (note & 31u)) & 1u) {
-            *w &= ~(1u << (note & 31u));
+        uint32_t *l = hold_lat[trk_index(t)];
+        if ((l[note >> 5] >> (note & 31u)) & 1u) {
+            l[note >> 5] &= ~(1u << (note & 31u));
             trk_note_off(t, note);
             return;
         }
-        *w |= 1u << (note & 31u);
+        if (t->p[P_VOICE] != V_POLY)
+            for (w = 0; w < 4u; w++) {
+                prev[w] = l[w];
+                l[w] = 0;
+            }
+        l[note >> 5] |= 1u << (note & 31u);
     }
     if (cin_left)
         cin_keep(t, note, vel);
@@ -649,6 +657,12 @@ static void input_on(track_t *t, uint32_t note, uint32_t vel)
         arp_add(t, note);
     else
         trk_note_on(t, note, vel);
+    for (w = 0; w < 4u; w++)                        /* after the new note: the mono voice glides over to it */
+        for (b = 0; prev[w] && b < 32u; b++)
+            if ((prev[w] >> b) & 1u) {
+                prev[w] &= ~(1u << b);
+                trk_note_off(t, w * 32u + b);
+            }
 }
 
 static int midi_note_held(const track_t *t, uint32_t note);
