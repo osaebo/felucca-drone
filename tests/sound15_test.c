@@ -209,13 +209,14 @@ static void test_filter(void)
               k && PAGES[k - 1u].fam == FAM_EDIT && PAGES[k - 1u].id[0] == P_FTYPE && PAGES[k - 1u].id[1] == P_E4 &&
               PAGES[k - 1u].id[2] == P_E5 && PAGES[k - 1u].id[3] == P_E7 && str_eq(PAGES[k - 2u].title, "EDIT 2"));
     }
-    /* every engine but ANALOG ignores TYPE; ANALOG's LP is the golden renders' (regress.c) */
+    /* every engine but ANALOG (and the fork's DRONE, whose filter has the same TYPE) ignores TYPE; ANALOG's LP is the
+     * golden renders' (regress.c) */
     for (e = 1; e < NENGINES; e++) {
-        if (ENGINES[e] == ENGINES[0] || !ENGINES[e]->npresets)
+        if (ENGINES[e] == ENGINES[0] || e == ENGI_DRONE || !ENGINES[e]->npresets)
             continue;
         same &= phrase_child(e, 0, 0) == phrase_child(e, 0, type_hp);
     }
-    check("TYPE BP / HP on every other engine: its phrase bit for bit (only ANALOG reads it)", same);
+    check("TYPE BP / HP on every other engine: its phrase bit for bit (only ANALOG and DRONE read it)", same);
     {
         uint64_t h0 = phrase_child(0, 0, 0), h1 = phrase_child(0, 0, type_bp), h2 = phrase_child(0, 0, type_hp);
         check("ANALOG SAW LEAD: BP and HP sound other than LP (and each other)", h0 != h1 && h0 != h2 && h1 != h2);

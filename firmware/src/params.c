@@ -73,6 +73,7 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
 #if FELUCCA_SLICE
                                              "SLICE",
 #endif
+                                             "--", "DRONE",  /* the hole (14: "--", not an alias of 1's "-"), DRONE (15) */
 };
 
 #define PD(l, f, mn, mx, df) {l, f, mn, mx, df, 0, 0}

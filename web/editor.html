@@ -1687,7 +1687,7 @@ function makeMockDevice(opt = {}) {
     E("MIDI", ["USB", "TRS"], 0), E("SYNC", NDASH, 0), E("ROUT", ["CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16"], 0), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), E("NAME", NDASH, 0), E("LOAD", NGO, 0), E("SAVE", NGO, 0),
     E("ENG", ["ANALOG", "-", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL",
-      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE"], 0), E("SET", NGO, 0),
+      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE", "--", "DRONE"], 0), E("SET", NGO, 0),
     E("CLRSQ", NGO, 0), E("INIT", NGO, 0),
     E("TYPE", ["ROOM", "SPRING", "HALL"], 2),       /* G_RTYPE (id 24, was G_DRCH): the reverb's model (HALL: 1.2) */
     D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0),   /* G_DRLVL, G_DRREV: inert since 1.0 */
@@ -1772,6 +1772,26 @@ function makeMockDevice(opt = {}) {
         E("DIV", ["4", "8", "16", "32", "AUTO", "MAN"], 2), D("START", F.INT, 0, 31, 0), D("PTCH", F.SEMI, -24, 24, 0),
         E("MODE", ["ONE", "GATE", "LOOP"], 0), E("REV", ["OFF", "ON"], 0), D("DCAY", F.TIME, 0, 127, 127), D("TONE", F.INT, 0, 127, 127)],
       presets: [P("CHOP", [0, 2, 0, 0, 0, 0, 127, 127], [0, 127, 127, 30], 0, 9), P("STUTTER", [0, 1, 0, 0, 1, 0, 90, 110], [0, 127, 127, 12], 0, 10)] },
+    /* 14: a hole (the user-preset number of the favourites and the protocol), 15: DRONE (this fork, src/eng_drone.c) */
+    { name: "--", titles: ["-", "-"], edit: [D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0),
+        D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0)], presets: [] },
+    { name: "DRONE", titles: ["OSC", "FLT"], edit: [E("MODE", ["UNI", "OCT", "5TH", "4TH", "MIN", "TRI", "CLUS", "DARK"], 7),
+        D("DTN", F.INT, 0, 127, 14, null, "ct"), D("WAVE", F.PCT, 0, 127, 0), D("SUB", F.PCT, 0, 127, 90), D("CUT", F.CUTOFF, 0, 127, 44),
+        D("RES", F.PCT, 0, 127, 50), D("DRFT", F.PCT, 0, 127, 50), D("GRIT", F.PCT, 0, 127, 15)],
+      presets: [P("ABYSS", [7, 14, 0, 110, 38, 40, 60, 10], [110, 127, 127, 115], 0, 8),
+        P("MONOLITH", [1, 10, 40, 90, 46, 55, 40, 30], [95, 127, 127, 110], 0, 8),
+        P("CATACOMB", [2, 18, 20, 70, 42, 70, 70, 20], [105, 127, 127, 118], 0, 5),
+        P("TRITONE", [5, 8, 64, 80, 50, 60, 50, 25], [100, 127, 127, 112], 0, 5),
+        P("SWARM", [6, 40, 0, 40, 58, 35, 100, 40], [90, 127, 127, 105], 0, 5),
+        P("DIRGE", [4, 12, 30, 60, 44, 50, 45, 15], [108, 127, 127, 116], 0, 5),
+        P("FURNACE", [1, 24, 90, 100, 54, 85, 55, 90], [80, 127, 127, 100], 0, 8),
+        P("VOID HUM", [0, 6, 0, 127, 30, 20, 30, 5], [100, 127, 127, 120], 0, 8),
+        P("SOLAR WIND", [1, 20, 127, 30, 62, 92, 80, 60], [90, 127, 127, 110], 0, 5),
+        P("RED GIANT", [2, 16, 127, 90, 40, 75, 50, 70], [85, 127, 127, 105], 0, 8),
+        P("ORBIT", [3, 30, 100, 50, 70, 100, 90, 45], [95, 127, 127, 112], 0, 5),
+        P("COSMODRONE", [0, 34, 127, 100, 36, 60, 75, 35], [100, 127, 127, 118], 0, 8),
+        P("SCREAMER", [6, 12, 110, 20, 66, 115, 60, 110], [70, 127, 127, 95], 0, 5),
+        P("DEEP FIELD", [7, 24, 64, 127, 28, 30, 90, 20], [115, 127, 127, 118], 0, 8)] },
   ];
   const FM6_E = ENG.findIndex((e) => e.name === "FM6"), FM6_OWN = FM6.FACTORY_PK.length, DRUM_E = ENG.findIndex((e) => e.name === "DRUM");
   /* factory PATTERNS[] (engines.c; the device loads them from SAVE > PHRASES, presets only suggest one): absolute
@@ -2423,11 +2443,11 @@ function enumShown(d) {
 /* the order the device shows its engines in (src/engines.c ENGINE_ORDER): the lists here follow it, the protocol keeps
    the engine numbers. engineOrder(names): the indices of names in that order, "-" (a reserved number) left out; a name
    the list does not know (another firmware) follows in index order */
-const ENGINE_ORDER = ["ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
+const ENGINE_ORDER = ["DRONE", "ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
   "SLICE", "DRUM"];
 function engineOrder(names) {
   const rank = (n) => { const k = ENGINE_ORDER.indexOf(n); return k < 0 ? ENGINE_ORDER.length : k; };
-  return (names || []).map((n, i) => i).filter((i) => names[i] !== "-")
+  return (names || []).map((n, i) => i).filter((i) => names[i] !== "-" && names[i] !== "--")
     .sort((a, b) => rank(names[a]) - rank(names[b]) || a - b);
 }
 

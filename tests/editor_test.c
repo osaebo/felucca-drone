@@ -204,10 +204,10 @@ static int preferences(void)
     bad += check("FAV_SET marks DRUM as a normal engine", host_wire[5] == 3 && favorite_has(ENGI_DRUM, 0));
     request(ED_FAV_GET, a, 4);
     bad += check("FAV_GET reads the bounded favorite range", host_wire[5] == 0 && host_wire[10] == 1);
-    a[0] = NENGINES; a[1] = 31; request(ED_FAV_SET, a, 4);
-    bad += check("empty user slot cannot be starred", host_wire[5] == 1 && !favorite_has(NENGINES, 31));
+    a[0] = NENGINES; a[1] = 31;   /* (the wire's user-preset number: NENGINES) */ request(ED_FAV_SET, a, 4);
+    bad += check("empty user slot cannot be starred", host_wire[5] == 1 && !favorite_has(ENG_USER, 31));
     up_store(31, "Saved"); request(ED_FAV_SET, a, 4);
-    bad += check("saved user slot can be starred without changing its sound", host_wire[5] == 3 && favorite_has(NENGINES, 31));
+    bad += check("saved user slot can be starred without changing its sound", host_wire[5] == 3 && favorite_has(ENG_USER, 31));
     a[3] = 32; request(ED_FAV_GET, a, 4);
     bad += check("favorite range cannot cross the end of user slots", host_wire[5] == 1);
     request(ED_FAV_SET, a, 3);

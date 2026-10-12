@@ -1,0 +1,40 @@
+# Builds the DRONE fork's firmware package (build/felucca-*.fwsc) on a GitHub runner: the JieLi toolchain and the
+# AC79 SDK are downloaded there (they are not part of this tree). Run it from the Actions tab (Run workflow) or by
+# pushing; the package is the run's artifact "felucca-drone".
+name: build DRONE firmware
+on:
+  push:
+    branches: [drone]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version (X.Y.Z-suffix, one digit each)"
+        default: "1.5.1-dr"
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python packages
+        run: pip install Pillow fonttools
+      - name: JieLi toolchain (clang for pi32v2)
+        run: tools/get_toolchain.sh "$HOME/.jieli"
+      - name: JieLi AC79 SDK (three of its files go into the package)
+        run: |
+          git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK" ||
+          git clone --depth 1 https://github.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
+      - name: Build
+        run: ./build.sh --release "${{ github.event.inputs.version || '1.5.1-dr' }}"
+      - name: Host tests (DSP, UI, regression)
+        run: sh tests/run_tests.sh
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: felucca-drone
+          path: |
+            build/felucca-*.fwsc
+            build/release-*/

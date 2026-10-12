@@ -390,8 +390,8 @@ static int page_visible(uint32_t i)
 {
     if (PAGES[i].scope == SC_TRACK && PAGES[i].id[0] >= P_LN0 && PAGES[i].id[0] <= P_LN7)
         return TSEL->eng_req % NENGINES == ENGI_DRUM;
-    if (PAGES[i].id[0] == P_FTYPE)                    /* FILTER (1.5, #104): ANALOG's */
-        return ENGINES[TSEL->eng_req % NENGINES] == &ENG_ANALOG;
+    if (PAGES[i].id[0] == P_FTYPE)                    /* FILTER (1.5, #104): ANALOG's, and DRONE's (TYPE CUT RES GRIT) */
+        return ENGINES[TSEL->eng_req % NENGINES] == &ENG_ANALOG || TSEL->eng_req % NENGINES == ENGI_DRONE;
     if (PAGES[i].graph >= GR_FMOP && PAGES[i].graph <= GR_FMENV)
         return TSEL->eng_req % NENGINES == ENGI_FM6;
 #if FELUCCA_SLICE
@@ -1236,6 +1236,8 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     t->p[P_REL] = e->presets[pi].env[3];
     t->p[P_ED_FLT] = e->presets[pi].fenv;
     t->p[P_VOICE] = e->presets[pi].mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
+    if (t->eng_req % NENGINES == ENGI_DRONE)          /* DRONE: its preset's filter TYPE (eng_drone.c DRONE_FTYPE) */
+        t->p[P_FTYPE] = DRONE_FTYPE[pi % NELEM(DRONE_FTYPE)];
     {   /* the sends */
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];
@@ -1346,7 +1348,7 @@ static uint32_t preset_all_pos(uint32_t *total)          /* list index of the se
     return cur;
 }
 
-/* list index n (< total) -> engine, *k its preset; NENGINES = user preset, *k its slot */
+/* list index n (< total) -> engine, *k its preset; ENG_USER = user preset, *k its slot */
 static uint32_t preset_all_at(uint32_t n, uint32_t *k)
 {
     uint32_t e = 0, i, r;
@@ -1354,7 +1356,7 @@ static uint32_t preset_all_at(uint32_t n, uint32_t *k)
         n -= preset_shown(eng_vis(r));
     if (r == NENG_SHOWN) {
         *k = up_nth(n);
-        return NENGINES;
+        return ENG_USER;
     }
     e = eng_vis(r);
     for (i = 0; preset_orig(ENGINES[e], i) != i || n--; i++)    /* the n-th shown preset */
@@ -1376,8 +1378,8 @@ static void list_set(uint32_t m)
     ui_lcat = (uint8_t)(m >= 2u && m < LIST_N ? m - 1u : 0u);
 }
 static const char *list_name(uint32_t m) { return m == 0u ? "ALL" : m == 1u ? "FAV" : CAT_NAME[(m - 1u) % CAT_N]; }
-/* the category of list entry e, k (preset_all_at: NENGINES = user preset k) */
-static uint32_t sound_cat(uint32_t e, uint32_t k) { return e == NENGINES ? up_cat(k) : preset_cat(e, k); }
+/* the category of list entry e, k (preset_all_at: ENG_USER = user preset k) */
+static uint32_t sound_cat(uint32_t e, uint32_t k) { return e == ENG_USER ? up_cat(k) : preset_cat(e, k); }
 static int list_keep(uint32_t e, uint32_t k)
 {
     uint32_t m = list_mode();
@@ -1413,12 +1415,12 @@ static uint32_t preset_at(uint32_t n, uint32_t *k)
         if (list_keep(e, *k) && !n--) return e;
     }
     *k = UP_SLOTS;
-    return NENGINES;
+    return ENG_USER;
 }
 static int preset_favorite(void)
 {
     uint32_t k = user_of(TSEL);
-    return favorite_has(k < UP_SLOTS ? NENGINES : TSEL->eng_req,
+    return favorite_has(k < UP_SLOTS ? ENG_USER : TSEL->eng_req,
                                         k < UP_SLOTS ? k : TSEL->preset);
 }
 /* #197: a settings change made by a knob (PRESETS > LIST, the FAV mark on PRESETS and in the EDIT layer) is written
@@ -1446,7 +1448,7 @@ static void settings_later_poll(void)                  /* ui_input, every pass *
 static void preset_mark(int on)
 {
     uint32_t k = user_of(TSEL);
-    if (favorite_set(k < UP_SLOTS ? NENGINES : TSEL->eng_req, k < UP_SLOTS ? k : TSEL->preset, on)) {
+    if (favorite_set(k < UP_SLOTS ? ENG_USER : TSEL->eng_req, k < UP_SLOTS ? k : TSEL->preset, on)) {
         ui.force = 1;
         settings_later();
     }
@@ -1477,7 +1479,7 @@ static void preset_hinted(void)                     /* after a sound load: SAVE 
 static void preset_go(uint32_t n)                    /* load list index n into the selected track (the sound only) */
 {
     uint32_t k, e = preset_at(n, &k);
-    if (e == NENGINES) {
+    if (e == ENG_USER) {
         up_load(k);
     } else {
         if (e != TSEL->eng_req)

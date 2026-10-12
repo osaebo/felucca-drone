@@ -20,9 +20,17 @@
 #define FELUCCA_FM4 0            /* the DIGITAL engine (eng_digital.c, four-operator FM): kept in the tree, not built
                                   * by default; replaced by FM6, its sounds convert (fm4_convert.c) */
 #endif
-#define NENGINES (13 + FELUCCA_SLICE)   /* SLICE (13) comes last: the other engines keep their numbers */
+#if !FELUCCA_SLICE
+#error "the DRONE fork keeps SLICE at 13: build with FELUCCA_SLICE=1"
+#endif
+/* DRONE fork: 14 stays a hole (favorites.factory[14] is MIDI LEARN's map; 14 is the user-preset number of the
+ * favourites, the PRESETS list and the editor protocol: ENG_USER), DRONE is 15 */
+#define NENGINES 16              /* SLICE 13, the hole 14, DRONE 15: the other engines keep their numbers */
+#define ENG_USER 14u             /* a user preset where an engine number goes (favourites, lists, the editor) */
+#define ENGI_HOLE 14u            /* never an engine: eng_ok refuses it */
+#define ENGI_DRONE 15u
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
+#define NENG_SHOWN (NENGINES - 1 - !FELUCCA_FM4)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER */
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 #define NELEM(a) (sizeof(a) / sizeof((a)[0]))
