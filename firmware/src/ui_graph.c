@@ -694,6 +694,140 @@ static void graph_wheel(const track_t *t, uint16_t c)
         cv_text_in(x + 3, 82, 12, &AF_S, names[k], T_MID, T_SURF);   /* under the bar, by its ink */
     }
 }
+/* DRONE (the fork's engine, eng_drone.c), on HOME and its EDIT pages: the drone field, live.
+ *   - Each oscillator of the stack (MODE: 3 or 6) is a ribbon at its interval's height (2 px a semitone around the
+ *     middle: an octave up 24 px higher), drawn with the engine's own oscillator types at the WAVE (and its SHP sweep)
+ *     and through GRIT's drive, its cycles across the panel as many as its pitch is higher (an octave up: twice as
+ *     many). The ribbons flow at their pitch's rate and slip against one another by their share of DTN, and wobble
+ *     with DRFT's walks (those of the voice sounding, read from the engine's memory): the beating, seen. Each is a
+ *     faint band from its centre line to its wave, two fading trails of where it was (80 and 160 ms ago), then the
+ *     wave itself (2 px while sounding).
+ *   - SUB: a ground swell under the field, an octave under OSC 1, as tall as SUB.
+ *   - The filter: its cutoff (CUT with the LFO, the cutoff's walk) is a line at its pitch on the same scale, against
+ *     the note playing (C3 at rest); the side it takes away (LP, LP24: above; HP: below; BP: both sides of a band) is
+ *     veiled and the ribbons in it fade. The veil's edge is soft for 12 dB, hard for LP24; RES glows on the line.
+ *   - Sounding: the ribbons in the track's colour and as tall as the loudest voice (to 12 px); silent: lower, faded.
+ *   - In the veil, a few dust motes drift left and twinkle (the harmonics the filter takes away) */
+static int32_t drn_y(int32_t semi16) { return 61 - semi16 / 8; }           /* 1/16 semitone above the note -> y */
+typedef struct {
+    uint32_t ta, tb;
+    int32_t f, fg, drv, amp;
+} drn_look_t;
+/* ribbon k's sample at panel x, its phase ph at x = 0 (pixel step inc), SUB's phase sph */
+static int32_t drn_at(const drn_look_t *L, uint32_t ph, uint32_t inc, uint32_t sph, int32_t x)
+{
+    uint32_t pp = ph + (uint32_t)x * inc;
+    int32_t sb = osc_sine(sph + (uint32_t)x * (39045157u / 2u));
+    int32_t nz = (int32_t)(((pp >> 7) * 2654435761u) >> 16) - 32768;          /* VOID: a noise per point */
+    int32_t s = drone_type(L->ta, pp, inc, sb, nz, L->fg);
+    if (L->f)
+        s += mulq15(drone_type(L->tb, pp, inc, sb, nz, L->fg) - s, L->f);
+    if (L->drv > 32768)
+        s = softclip(((s >> 2) * (L->drv >> 2)) >> 11);
+    return s * L->amp / 32768;
+}
+static void graph_drone(const track_t *t, uint16_t c)
+{
+    const int16_t *p = t->p;
+    uint32_t mode = (uint32_t)p[P_E0] % NELEM(DRONE_STACK), no = DRONE_STACK[mode].n, ft = (uint32_t)p[P_FTYPE];
+    uint32_t now = fm1_ms, k, part = (uint32_t)(t - trk) % NPART;
+    int32_t lvl = 0, note16 = 48 * 16, wave, drift = p[P_E6], spread = p[P_E1];
+    int32_t cut, ycut, res = p[P_E5], x, glow, band = 10 + (127 - res) / 6, lfo = mulq15(t->lfo_val, t->lfo_fade);
+    const voice_t *vs = 0;
+    const drone_vs_t *ov = 0;
+    uint16_t on, off, veil = ux_mix(T_SURF, T_BG, 55);
+    drn_look_t L;
+    vmod_t mm;
+    for (k = 0; k < NVOICE; k++)                     /* the loudest voice sounding: its note, its walks */
+        if (t->v[k].active && t->v[k].env_out > lvl) {
+            lvl = t->v[k].env_out;
+            vs = &t->v[k];
+        }
+    if (vs && t->engine == ENGI_DRONE && eng_mem_owner[part] == ENGI_DRONE + 1u)
+        ov = drone_vs(t, vs);
+    if (vs)
+        note16 = vs->pitch_cur;
+    mm.shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7);
+    wave = drone_wave(t, &mm);
+    L.ta = (uint32_t)wave >> 5;
+    L.tb = L.ta + 1u;
+    L.f = (wave & 31) << 10;
+    L.fg = L.ta < 3u ? 8192 : 8192 + ((L.f * 12288) >> 15);
+    L.drv = 32768 + p[P_E7] * 768;
+    L.amp = (4 + (lvl * 8 >> 15)) * (no > 3u ? 7 : 10) / 10;   /* 4 px at rest, to 12 px sounding (6-stacks: 0.7) */
+    on = vs ? c : ux_mix(c, T_SURF, 40);
+    off = ux_mix(on, T_SURF, 65);
+    /* the cutoff on the pitch scale: CUT + the LFO + the voice's walk, 0.855 semitone a step from 30 Hz (MIDI 22.5) */
+    cut = (p[P_E4] << 8) + ((lfo * p[P_LD_FLT]) >> 7) + (vs && t->engine == ENGI_DRONE ? (vs->s[4] * drift) >> 9 : 0);
+    cut = clamp(cut, 0, 127 << 8);
+    ycut = clamp(drn_y(360 + (cut >> 8) * 137 / 10 - note16), 3, 118);
+    {   /* the veil over what the filter takes away; its edge 8 px soft (12 dB) or 2 px (LP24) */
+        int32_t soft = ft == 3u ? 2 : 8, y;
+        for (y = 3; y < 119; y++) {
+            int32_t d = ft == 2u ? y - ycut : ft == 1u ? (y < ycut ? ycut - y : y - ycut) - band : ycut - y;
+            if (d > 0)
+                cv_rect(PANEL_X0 - 4, y, PANEL_W + 8, 1, d >= soft ? veil : ux_mix(T_SURF, veil, d * 100 / soft));
+        }
+        for (k = 0; k < 28u; k++) {                    /* the motes: a place each, drifting left, a twinkle each */
+            uint32_t hsh = (k + 1u) * 2654435761u, tw = (now / 7u + (hsh >> 20)) & 255u;
+            int32_t mx = (int32_t)(((hsh >> 8) + now / (40u + (hsh & 31u))) % (uint32_t)PANEL_W), my = 4 + (int32_t)((hsh >> 3) % 113u);
+            int32_t dd = ft == 2u ? my - ycut : ft == 1u ? (my < ycut ? ycut - my : my - ycut) - band : ycut - my;
+            if (dd >= soft && tw < 160u)
+                cv_rect(PANEL_X0 + (int32_t)PANEL_W - 1 - mx, my, 1 + (k & 1u), 1, ux_mix(veil, on, (int32_t)(tw < 80u ? tw : 160u - tw) / 2 + 20));
+        }
+    }
+    {   /* SUB: a ground swell, an octave under OSC 1 */
+        int32_t a = p[P_E3] * 10 / 127, py = 0;
+        uint32_t ph = now * 536870u;
+        uint16_t fill = ux_mix(on, T_SURF, 85), edge = ux_mix(on, T_SURF, 50);
+        if (a)
+            for (x = 0; x <= PANEL_W; x += 2) {
+                int32_t y = 108 - a - osc_sine(ph + (uint32_t)x * (39045157u / 2u)) * a / 32768;
+                cv_rect(PANEL_X0 + x - 1, y, 2, 118 - y, fill);
+                if (x)
+                    cv_line(PANEL_X0 + x - 2, py, PANEL_X0 + x, y, edge);
+                py = y;
+            }
+    }
+    for (k = 0; k < no; k++) {                       /* the ribbons */
+        int32_t iv = DRONE_STACK[mode].iv[k], yc = drn_y(iv * 16), det = (spread * DRONE_DET[k]) >> 2, e;
+        uint32_t inc = (uint32_t)(((uint64_t)pitch_inc(960u + (uint32_t)(iv * 16)) * 39045157u) / pitch_inc(960u));
+        uint32_t rate = inc / 400u + (uint32_t)(det * 42950), off0 = k * 0x28F5C28Fu, wob = 0;
+        int cutside = ft == 2u ? yc > ycut : ft == 1u ? (yc < ycut ? ycut - yc : yc - ycut) > band : yc < ycut;
+        uint16_t col = cutside ? off : on;
+        if (ov && drift)                               /* DRFT: the walk of this oscillator, a phase wobble */
+            wob = (uint32_t)((ov->w[k] * drift) << 9);
+        for (e = 3; e >= 0; e--) {                     /* 3: the band, 2 and 1: the trails, 0: the wave */
+            uint32_t tt = now - (uint32_t)(e == 3 ? 0 : e) * 80u, ph = tt * rate + off0 + wob, sph = tt * 268435u;
+            uint16_t cc = e == 3 ? ux_mix(col, T_SURF, 88) : e ? ux_mix(col, T_SURF, 45 + 20 * e) : col;
+            int32_t py = 0;
+            for (x = 0; x <= PANEL_W; x += 2) {
+                int32_t y = yc - drn_at(&L, ph, inc, sph, x);
+                if (e == 3) {
+                    if (y < yc) cv_rect(PANEL_X0 + x - 1, y, 2, yc - y, cc);
+                    else if (y > yc) cv_rect(PANEL_X0 + x - 1, yc, 2, y - yc, cc);
+                } else if (x) {
+                    if (!e && vs)
+                        cv_line_t(PANEL_X0 + x - 2, py, PANEL_X0 + x, y, cc, 2);
+                    else
+                        cv_line(PANEL_X0 + x - 2, py, PANEL_X0 + x, y, cc);
+                }
+                py = y;
+            }
+        }
+    }
+    glow = res / 32;                                   /* RES: the cutoff line glows wider */
+    if (ycut > 3 && ycut < 118) {
+        int32_t g;
+        for (g = glow; g > 0; g--) {
+            uint16_t gc = ux_mix(T_ACCENT, T_SURF, 40 + g * 15);
+            cv_rect(PANEL_X0 - 4, ycut - g, PANEL_W + 8, 1, gc);
+            cv_rect(PANEL_X0 - 4, ycut + g, PANEL_W + 8, 1, gc);
+        }
+        cv_rect(PANEL_X0 - 4, ycut, PANEL_W + 8, ft == 3u ? 2 : 1, T_ACCENT);
+    }
+}
+
 /* The FM charts' parts: an operator box 21 x 17 (rows 23 px apart, columns 24), junction dots, Manhattan routes */
 #define FM_BH 17
 static void fm_dot(int32_t x, int32_t y, uint16_t c) { cv_rect(x - 1, y - 1, 3, 3, c); }
@@ -2252,7 +2386,10 @@ static void draw_graph(void)
         graph_ht = 100;
     } else if (ui.home) {
         cv_oy = 0;
-        graph_scope(c);
+        if (t->eng_req % NENGINES == ENGI_DRONE)     /* (the DRONE fork) the drone field */
+            graph_drone(t, c);
+        else
+            graph_scope(c);
     } else {
         switch (pg->graph) {
         case GR_ADSR:
@@ -2332,7 +2469,11 @@ static void draw_graph(void)
             if (fop_ok()) graph_fm6env(t, c);
             break;
         default:
-            if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL) graph_wheel(t, c);
+            if ((pg->scope == SC_ENGINE || pg->id[0] == P_FTYPE) && t->eng_req % NENGINES == ENGI_DRONE) {
+                cv_oy = 0;                                /* (EDIT 1, 2 and FILTER: the drone field) */
+                graph_drone(t, c);
+            }
+            else if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL) graph_wheel(t, c);
             else if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE && sample_wave.ready) graph_sample(c);
             else if (pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_FM6) graph_fm6(t, c, 6u);   /* EDIT 1 and 2 */
 #if FELUCCA_FM4

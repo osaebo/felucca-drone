@@ -763,7 +763,8 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_ENV_SYNC, S_ENV_DEST_SYNC, S_FILTER,
        S_LEARN_WAIT, S_LEARN_PICK, S_LEARN_SET, S_LEARN_LONG, S_GLO_LEARN, S_MENU_LCLEAR, S_MENU_LCLEAR_NONE,
        S_DLY_DOT, S_DLY_DOT16, S_FX_THROW,
-       S_DETAIL, S_DETAIL_PLAYING, S_DETAIL_REST, S_DETAIL_DRUM, S_ROLL_MARKS, S_DRUM_MARKS, S_HELP_DETAIL, S_COUNT };
+       S_DETAIL, S_DETAIL_PLAYING, S_DETAIL_REST, S_DETAIL_DRUM, S_ROLL_MARKS, S_DRUM_MARKS, S_HELP_DETAIL,
+       S_HOME_DRONE, S_EDIT_DRONE, S_FILTER_DRONE, S_HOME_DRONE6, S_COUNT };   /* (the DRONE fork: the drone field) */
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "phrases", "project", "tools", "song_empty", "song", "step", "auto_steps", "auto_add_chance", "automation", "drum",
     "drum_hand", "drum_cym", "mixer", "mixer_from_home", "mixer_pan", "env", "env_dest", "lfo", "mod", "fx", "slicer", "dly", "scl", "chord", "chord_wide", "chord_off", "chord_kit", "arp",
@@ -790,7 +791,8 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "env_sync", "env_dest_sync", "filter",
     "learn_wait", "learn_pick", "learn_set", "learn_long", "layer_glo_learn", "menu_learn_clear", "menu_learn_clear_none",
     "dly_dotted", "dly_dotted_16", "perform_throw",
-    "detail", "detail_playing", "detail_rest", "detail_drum", "roll_marks", "drum_marks", "help_detail"};
+    "detail", "detail_playing", "detail_rest", "detail_drum", "roll_marks", "drum_marks", "help_detail",
+    "home_drone", "edit_drone", "filter_drone", "home_drone6"};
 
 /* the STEP page's piano roll (ui_graph.c graph_roll) on track 1, stopped unless said: an empty pattern; ACID in
  * A minor; POLY chords (Am7 F C G, tied); a line with ties, slides and accents in C major; LEN 32 on its second
@@ -1097,6 +1099,12 @@ static void setup(int s)
         go_title("ENV"); ui.hot_col = 0; ui.hot_t = 30; break;
     case S_ENV_DEST_SYNC: TSEL->p[P_ESYNC] = 1; go_title("ENV DEST"); break;
     case S_FILTER: TSEL->p[P_FTYPE] = 1; go_title("FILTER"); break;   /* 1.5: ANALOG's TYPE CUT RES KTR */
+    /* the DRONE fork: the drone field on HOME (ABYSS; a six-drone stack through FOLD and LP24), EDIT 1, FILTER (BP) */
+    case S_HOME_DRONE: eng(ENGI_DRONE); break;
+    case S_HOME_DRONE6: eng(ENGI_DRONE); TSEL->p[P_E0] = 12; TSEL->p[P_E2] = 100; TSEL->p[P_E7] = 80; TSEL->p[P_FTYPE] = 3;
+        break;
+    case S_EDIT_DRONE: eng(ENGI_DRONE); go_title("EDIT 1"); break;
+    case S_FILTER_DRONE: eng(ENGI_DRONE); TSEL->p[P_FTYPE] = 1; TSEL->p[P_E5] = 110; go_title("FILTER"); break;
     case S_LFO: go_title("LFO"); break;
     case S_MOD: TSEL->p[P_M1SRC] = 1; TSEL->p[P_M1DST] = 2; TSEL->p[P_M1AMT] = 40; TSEL->p[P_M2SRC] = 6;
         TSEL->p[P_M2DST] = 14; TSEL->p[P_M2AMT] = -64; mod_ui_slot = 1; go_title("MOD"); break;
@@ -2310,6 +2318,17 @@ int main(int argc, char **argv)
                 for (i = 0; i < N * 4; i++) { ui.frame++; draw_graph(); nscr = npend = 0; }
                 ti = (double)(clock() - c0) / CLOCKS_PER_SEC / (N * 4) * 1e6;
                 fprintf(rep, "  %s: the panel redrawn %.1f us; an unchanged frame (signature only) %.2f us\n", S_NAME[G[k]], tg, ti);
+            }
+        }
+        {   /* the DRONE fork: HOME's panel redrawn, the scope against the drone field (ABYSS; SOL6 through FOLD) */
+            static const int G[] = {S_HOME, S_HOME_DRONE, S_HOME_DRONE6};
+            for (k = 0; k < 3u; k++) {
+                clock_t c0;
+                setup(G[k]); pal(1); draw(G[k]);
+                c0 = clock();
+                for (i = 0; i < N * 4; i++) { ui.force = 1; draw_graph(); ui.force = 0; nscr = npend = 0; }
+                fprintf(rep, "  %s: HOME's panel redrawn %.1f us\n", S_NAME[G[k]],
+                        (double)(clock() - c0) / CLOCKS_PER_SEC / (N * 4) * 1e6);
             }
         }
         roll_cost();

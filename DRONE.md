@@ -30,6 +30,23 @@ So each preset moves as it loads. They are ABYSS, MONOLITH, CATACOMB, TRITONE, S
 SOLAR WIND, RED GIANT, ORBIT, COSMODRONE, SCREAMER, DEEP FIELD, SOL SIX, IRON CHOIR, BLACK SUN, HIVE, BELL TOMB,
 FOLDED, STATIC SEA, AURORA, HALO, SUS VAULT, WIDE ARC, RUST, PULSAR, ICE CAVE, GHOST, MAGMA, DESERT and NEUTRON.
 
+## The drone field (the screen)
+
+On HOME, and on DRONE's EDIT and FILTER pages, the panel shows the drone as it plays instead of the scope:
+- **Ribbons:** each oscillator of the stack is a ribbon at its interval's height, an octave being 24 px.
+  - It is drawn with the engine's own oscillator types at the current WAVE, through GRIT's drive.
+  - It flows at its pitch's rate and slips against the others by DTN, so the beating is visible.
+  - It wobbles with DRFT's random walks, read from the sounding voice.
+  - Two fading trails follow it.
+- **Sub:** SUB is a swell along the bottom.
+- **Filter:**
+  - The cutoff is a line on the same pitch scale, moving with the LFO and the cutoff's walk.
+  - What the filter removes is veiled: above for LP and LP24, below for HP, outside a band for BP. Its edge is soft at
+    12 dB and hard for LP24.
+  - Ribbons in the veil fade, and resonance makes the line glow.
+  - Dust motes drift and twinkle in the veiled space.
+- **Level:** the ribbons grow with the sounding voice and fall back when nothing plays.
+
 ## LP24 ladder and the monosynth presets
 
 The filter TYPE (EDIT > FILTER, on ANALOG and DRONE) has a fourth value, **LP24**: a 4-pole, 24 dB transistor-ladder
