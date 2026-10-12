@@ -69,31 +69,41 @@ int main(int argc, char **argv)
         if (!w) { perror(path); return 1; }
         wav_hdr(w, frames);
         setup(ENGI_DRONE, k, -2);
-        render(w, frames, k == 4 || k == 6 || k == 12 ? keys_one : k == 5 || k == 3 || k == 10 ? keys_minor : keys_fifth);
+        {
+            uint32_t mo = (uint32_t)e->presets[k].e[0];
+            render(w, frames, mo >= 12u || mo == 6u || k == 12u ? keys_one : mo == 4u || mo == 5u ? keys_minor : keys_fifth);
+        }
         fclose(w);
         printf("%s\n", path);
     }
-    {   /* CPU: 4 voices of the heaviest DRONE preset against 4 of ANALOG SAW LEAD, 10 s each */
-        static const uint32_t ENG[2] = {ENGI_DRONE, 0};
-        double ns[2];
-        uint32_t r;
-        for (r = 0; r < 2; r++) {
+    {   /* CPU (dry): every DRONE preset with 4 notes held (its cap), against ANALOG SAW LEAD with 8 */
+        double worst = 0, an;
+        uint32_t wk = 0, r;
+        for (r = 0; r <= e->npresets; r++) {
             clock_t c0;
             uint32_t f;
             int32_t o[2 * CTL];
-            setup(ENG[r], r ? 0u : 6u, 0);
+            double ns;
+            setup(r < e->npresets ? ENGI_DRONE : 0u, r < e->npresets ? r : 0u, 0);
             inst.p[P_VOICE] = V_POLY;
             for (f = 0; f < 4u; f++)
-                inst.p[P_DIST + f] = 0;                    /* dry: the engines alone */
+                inst.p[P_DIST + f] = 0;
+            inst.p[P_ATK] = 0;                             /* sounding at once: the cost of the whole voice */
+            fm1_in.notes = 0;
+            for (f = 0; f < 64u; f++)                      /* keys up first: the next keys are new notes */
+                mix_block(o, CTL);
             c0 = clock();
-            for (f = 0; f < FS * 10u; f += CTL) {
-                fm1_in.notes = r ? 0xFFu << 7 : (1u << 7) | (1u << 11) | (1u << 14) | (1u << 18);
+            for (f = 0; f < FS * 4u; f += CTL) {
+                fm1_in.notes = r < e->npresets ? (1u << 7) | (1u << 11) | (1u << 14) | (1u << 18) : 0xFFu << 7;
                 mix_block(o, CTL);
             }
-            ns[r] = (double)(clock() - c0) * 1e9 / CLOCKS_PER_SEC / (FS * 10.0);
+            ns = (double)(clock() - c0) * 1e9 / CLOCKS_PER_SEC / (FS * 4.0);
+            if (r < e->npresets && ns > worst) { worst = ns; wk = r; }
+            if (getenv("CPUALL")) printf("  %-12s %.1f\n", r < e->npresets ? e->presets[r].name : "ANALOG", ns);
+            if (r == e->npresets) an = ns;
         }
-        printf("cpu (dry): DRONE FURNACE 4 voices (its cap) %.1f ns / sample, ANALOG SAW LEAD 8 voices %.1f ns / sample (%.2f x)\n", ns[0], ns[1],
-               ns[0] / ns[1]);
+        printf("cpu (dry): heaviest DRONE preset %s, 4 voices: %.1f ns / sample; ANALOG SAW LEAD 8 voices %.1f (%.2f x)\n",
+               e->presets[wk].name, worst, an, worst / an);
     }
     return 0;
 }

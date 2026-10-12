@@ -103,8 +103,8 @@ static void host_preset_values(track_t *t, uint32_t e, uint32_t pi, const preset
     t->p[P_VOICE] = p->mono ? V_LEGATO : V_POLY;
     for (i = 0; i < 4u; i++)
         t->p[P_DIST + i] = (int16_t)(p->fx[i] ? p->fx[i] - 1 : FX_DEF[i]);
-    if (e == ENGI_DRONE)                          /* DRONE: its preset's filter TYPE (ui.c apply_preset_to) */
-        t->p[P_FTYPE] = DRONE_FTYPE[pi % NELEM(DRONE_FTYPE)];
+    if (e == ENGI_DRONE)                          /* DRONE: its filter TYPE, LFO, matrix slot 1 (ui.c apply_preset_to) */
+        drone_preset_extra(t, pi);
     fm6_track_loaded(t);                          /* FM6: the preset's patch (ui.c apply_preset_to) */
 }
 static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)

@@ -228,6 +228,11 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/speaker_test" tests/speaker_test.c -lm
     run "SPEAKER EQ: FLAT / LOWCUT / BASS+ responses, BASS+ harmonics of the bass, the sub cut, no offset after, headroom on a full-scale kick (#180)" "$OUT/speaker_test"
     run "DSP render (ANALOG preset 0)" "$OUT/hostsim" 0 0 1 "$OUT/render.wav"
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hold_test" tests/hold_test.c -lm
+    run "HOLD with the ARP off (DRONE fork): latch, release, HOLD off, ARP on, panic" "$OUT/hold_test"
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drone_demo" tests/drone_demo.c -lm
+    mkdir -p build/drone_demo
+    run "DRONE: every preset rendered (build/drone_demo), its cost" "$OUT/drone_demo" build/drone_demo
     mkdir -p build/tracks_demo
     run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/project_test" tests/project_test.c -lm

@@ -1236,8 +1236,8 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     t->p[P_REL] = e->presets[pi].env[3];
     t->p[P_ED_FLT] = e->presets[pi].fenv;
     t->p[P_VOICE] = e->presets[pi].mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
-    if (t->eng_req % NENGINES == ENGI_DRONE)          /* DRONE: its preset's filter TYPE (eng_drone.c DRONE_FTYPE) */
-        t->p[P_FTYPE] = DRONE_FTYPE[pi % NELEM(DRONE_FTYPE)];
+    if (t->eng_req % NENGINES == ENGI_DRONE)          /* DRONE: its filter TYPE, LFO and matrix slot 1 */
+        drone_preset_extra(t, pi);                    /* (eng_drone.c DRONE_EXTRA) */
     {   /* the sends */
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];

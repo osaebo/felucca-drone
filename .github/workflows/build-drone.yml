@@ -9,7 +9,7 @@ on:
     inputs:
       version:
         description: "version (X.Y.Z-suffix, one digit each)"
-        default: "1.5.1-dr"
+        default: "1.5.1-dr2"
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -28,7 +28,7 @@ jobs:
             https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK" ||
           git clone --depth 1 https://github.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
       - name: Build
-        run: ./build.sh --release "${{ github.event.inputs.version || '1.5.1-dr' }}"
+        run: ./build.sh --release "${{ github.event.inputs.version || '1.5.1-dr2' }}"
       - name: Host tests (DSP, UI, regression)
         run: sh tests/run_tests.sh
         continue-on-error: true

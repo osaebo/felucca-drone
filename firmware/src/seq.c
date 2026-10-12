@@ -608,9 +608,39 @@ static __attribute__((noinline)) void cin_keep(track_t *t, uint32_t note, uint32
     cin_up[i] &= (uint8_t)~(1u << k);
 }
 
+/* HOLD with the ARP off (the DRONE fork: ARP 2 > HOLD ON, ARP MODE OFF): a key latches its note, the same key again
+ * lets it go; letting go of a key does nothing. HOLD off, the ARP on, or a panic: every latched note lets go
+ * (hold_block). A bit per note and track */
+static uint32_t hold_lat[NTRK][4];
+static int hold_on(const track_t *t) { return t->p[P_AHOLD] && !t->p[P_AMODE]; }
+static int hold_has(const track_t *t, uint32_t n) { return (hold_lat[trk_index(t)][(n >> 5) & 3u] >> (n & 31u)) & 1u; }
+static void trk_note_off(track_t *t, uint32_t note);
+static void hold_block(track_t *t, int panic)
+{
+    uint32_t *l = hold_lat[trk_index(t)], w, b;
+    if (!panic && hold_on(t))
+        return;
+    for (w = 0; w < 4u; w++)
+        for (b = 0; l[w] && b < 32u; b++)
+            if ((l[w] >> b) & 1u) {
+                l[w] &= ~(1u << b);
+                if (!panic)
+                    trk_note_off(t, w * 32u + b);
+            }
+}
+
 static void input_on(track_t *t, uint32_t note, uint32_t vel)
 {
     last_note = (uint8_t)note;
+    if (hold_on(t) && note < 128u) {                /* HOLD: the second press of a latched note lets it go */
+        uint32_t *w = &hold_lat[trk_index(t)][note >> 5];
+        if ((*w >> (note & 31u)) & 1u) {
+            *w &= ~(1u << (note & 31u));
+            trk_note_off(t, note);
+            return;
+        }
+        *w |= 1u << (note & 31u);
+    }
     if (cin_left)
         cin_keep(t, note, vel);
     if (rec_on(t) && !t->p[P_AMODE])               /* (ARP on: arp_tick records its notes) */
@@ -635,6 +665,8 @@ static void input_off(track_t *t, uint32_t note)
     }
     rec_release(t, note);
     arp_remove(t, note);                            /* both: the note may have started in the */
+    if (note < 128u && hold_has(t, note))           /* HOLD: a latched note sounds on */
+        return;
     trk_note_off(t, note);                          /* other mode (ARP switched while held) */
 }
 
@@ -1258,10 +1290,12 @@ static void events_block(uint32_t n)
         if ((pr >> i) & 1u) {
             midi_forget_track(i);
             trk_all_off(t);
+            hold_block(t, 1);
             t->nheld = 0;
             t->arp_phys = 0;
             arp_forget(t);
         }
+        hold_block(t, 0);                             /* HOLD off or the ARP on: the latched notes let go */
         engine_block(t);                              /* engine switch: fade, then switch (voice.c) */
         /* ARP turned off, or HOLD released with no key down: drop the latched chord */
         if ((t->armp && !t->p[P_AMODE]) || (t->aholdp && !t->p[P_AHOLD] && !t->arp_phys)) {
