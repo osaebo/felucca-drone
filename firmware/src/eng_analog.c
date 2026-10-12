@@ -49,6 +49,7 @@ static void analog_note_on(track_t *t, voice_t *v)
     if (!v->s[2])
         v->s[2] = 0x1234567 + (int32_t)v->age;        /* noise state */
     v->s[3] = 0;                                      /* SYNC: no restart pending */
+    v->s[4] = v->s[5] = v->s[6] = 0;                  /* LP24 (the DRONE fork): its stages 3, 4 and last output */
 }
 
 /* WAVE SYNC / SUB: OSC 1 a saw, OSC 2 the synced saw / the sub square; then noise, drive and the filter as
@@ -76,7 +77,11 @@ static __attribute__((noinline)) void analog_render_x(track_t *t, voice_t *v, in
     }
     uint32_t ft = (uint32_t)p[P_FTYPE];
     int32_t fk = ANALOG_K(p[P_E5]);
+    lad_t lc = {0, 0, 4096};
+    int32_t z[5] = {v->s[0], v->s[1], v->s[4], v->s[5], v->s[6]};   /* LP24: the ladder's state (else unused) */
     tsvf_coef(&flt, cut, p[P_E5]);
+    if (ft == 3u)
+        lad_coef(&lc, cut, p[P_E5]);
     for (i = 0; i < n; i++) {
         int32_t a = osc_saw(ph0, inc1), b, s;
         if (sub) {
@@ -104,13 +109,21 @@ static __attribute__((noinline)) void analog_render_x(track_t *t, voice_t *v, in
             s += mulq15((int32_t)(noise32(&nst) >> 17) - 16384, nz);
         if (drv)
             s = softclip(((s >> 2) * (drive >> 2)) >> 11);
-        s = soft_knee(analog_tap(&flt, fk, s >> 1, &ic1, &ic2, ft), 16000) << 1;
+        s = soft_knee(ft == 3u ? lad_tick(&lc, s >> 1, z) : analog_tap(&flt, fk, s >> 1, &ic1, &ic2, ft), 16000) << 1;
         out[i] += voice_amp(s, m, i) << 1;
     }
     v->ph[0] = ph0;
     v->ph[1] = ph1;
-    v->s[0] = ic1;
-    v->s[1] = ic2;
+    if (ft == 3u) {
+        v->s[0] = z[0];
+        v->s[1] = z[1];
+        v->s[4] = z[2];
+        v->s[5] = z[3];
+        v->s[6] = z[4];
+    } else {
+        v->s[0] = ic1;
+        v->s[1] = ic2;
+    }
     v->s[2] = nst;
     v->s[3] = jl;
 }
@@ -134,7 +147,11 @@ static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1];                  /* state in locals: out[] may alias v->s[] */
     int32_t ic1 = v->s[0], ic2 = v->s[1], nst = v->s[2];
     int32_t fk = ft ? ANALOG_K(p[P_E5]) : 0;
+    lad_t lc = {0, 0, 4096};
+    int32_t z[5] = {v->s[0], v->s[1], v->s[4], v->s[5], v->s[6]};   /* LP24: the ladder's state (else unused) */
     tsvf_coef(&flt, cut, p[P_E5]);
+    if (ft == 3u)
+        lad_coef(&lc, cut, p[P_E5]);
     for (i = 0; i < n; i++) {
         int32_t a, b, s;
         switch (wave) {
@@ -168,7 +185,8 @@ static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t
             s = softclip(((s >> 2) * (drive >> 2)) >> 11);   /* pre-shifts: drive is up to 3x, no overflow */
         {   /* filter, linear up to half scale, then a soft knee (only resonance peaks saturate); soft_knee()
              * written out: the host compiler makes this loop 1 % slower with the call */
-            int32_t y = ft ? analog_tap(&flt, fk, s >> 1, &ic1, &ic2, ft) : tsvf_lp(&flt, s >> 1, &ic1, &ic2);
+            int32_t y = ft == 3u ? lad_tick(&lc, s >> 1, z)
+                        : ft ? analog_tap(&flt, fk, s >> 1, &ic1, &ic2, ft) : tsvf_lp(&flt, s >> 1, &ic1, &ic2);
             int32_t a = y < 0 ? -y : y;
             if (a > 16000) {
                 a = 16000 + (softclip((a - 16000) * 2) >> 1);
@@ -180,8 +198,16 @@ static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t
     }
     v->ph[0] = ph0;
     v->ph[1] = ph1;
-    v->s[0] = ic1;
-    v->s[1] = ic2;
+    if (ft == 3u) {
+        v->s[0] = z[0];
+        v->s[1] = z[1];
+        v->s[4] = z[2];
+        v->s[5] = z[3];
+        v->s[6] = z[4];
+    } else {
+        v->s[0] = ic1;
+        v->s[1] = ic2;
+    }
     v->s[2] = nst;
 }
 static __attribute__((noinline)) void analog_render_f(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
@@ -212,7 +238,40 @@ static const preset_t ANALOG_PRESETS[] = {
     {"BRASS", {0, 10, 64, 0, 45, 20, 10, 64}, {35, 70, 90, 45}, 40, 0, FX(0, 20, 20, 40), PAT(6)},
     {"WIND", {0, 0, 0, 90, 30, 90, 0, 0}, {60, 90, 60, 80}, 50, 0, FX(0, 30, 30, 70), PAT(5)},
     {"STRINGS", {0, 25, 64, 0, 70, 10, 0, 32}, {70, 90, 115, 90}, 5, 0, FX(0, 60, 20, 70), PAT(5)},
+    /* the DRONE fork: the 70s monosynth set, through the LP24 ladder (ANALOG_EXTRA) */
+    {"LADDER BASS", {6, 0, 70, 0, 28, 50, 40, 64}, {0, 64, 95, 30}, 50, 1, FX(10, 0, 10, 15), PAT(2)},
+    {"PROG LEAD", {0, 8, 64, 0, 52, 60, 50, 96}, {4, 80, 110, 50}, 30, 1, FX(0, 15, 35, 30), PAT(4)},
+    {"FLUTE 70S", {2, 4, 30, 25, 60, 20, 0, 100}, {40, 70, 110, 55}, 15, 1, FX(0, 20, 25, 40), PAT(4)},
+    {"DEEP TRI", {2, 0, 0, 0, 50, 20, 30, 64}, {0, 80, 110, 30}, 10, 1, FX(0, 0, 10, 15), PAT(8)},
+    {"SQR FUNK", {1, 6, 64, 0, 28, 70, 60, 64}, {0, 58, 75, 25}, 60, 1, FX(10, 0, 10, 15), PAT(2)},
+    {"FAT BRASS", {0, 10, 64, 0, 40, 25, 30, 80}, {30, 80, 100, 45}, 40, 1, FX(0, 20, 20, 35), PAT(6)},
 };
+#define ANALOG_N0 12u            /* the presets before the fork's (ANALOG_EXTRA starts there) */
+/* the fork's presets: their filter TYPE (3 LP24), glide (GLD), note priority (1 LOW, as the classic monosynths),
+ * vibrato (LFO RATE, PIT, FADE) */
+static const struct { uint8_t ft, gl, prio, rate; int8_t pit; uint8_t fade; } ANALOG_EXTRA[] = {
+    {3, 0, 1, 0, 0, 0},          /* LADDER BASS */
+    {3, 45, 1, 86, 1, 95},       /* PROG LEAD: portamento, a late vibrato */
+    {3, 25, 1, 86, 1, 80},       /* FLUTE 70S */
+    {3, 0, 1, 0, 0, 0},          /* DEEP TRI: a soft sub bass */
+    {3, 0, 1, 0, 0, 0},          /* SQR FUNK */
+    {3, 10, 1, 0, 0, 0},         /* FAT BRASS */
+};
+_Static_assert(NELEM(ANALOG_PRESETS) == ANALOG_N0 + NELEM(ANALOG_EXTRA), "ANALOG_EXTRA: one per fork preset");
+static void analog_preset(track_t *t, uint32_t pi)
+{
+    if (pi >= ANALOG_N0 && pi - ANALOG_N0 < NELEM(ANALOG_EXTRA)) {
+        uint32_t k = pi - ANALOG_N0;
+        t->p[P_FTYPE] = ANALOG_EXTRA[k].ft;
+        t->p[P_GLIDE] = ANALOG_EXTRA[k].gl;
+        t->p[P_PRIO] = ANALOG_EXTRA[k].prio;
+        if (ANALOG_EXTRA[k].pit) {
+            t->p[P_LRATE] = ANALOG_EXTRA[k].rate;
+            t->p[P_LD_PIT] = ANALOG_EXTRA[k].pit;
+            t->p[P_LFADE] = ANALOG_EXTRA[k].fade;
+        }
+    }
+}
 
 static const engine_t ENG_ANALOG = {
     .name = "ANALOG",
@@ -228,10 +287,11 @@ static const engine_t ENG_ANALOG = {
         {"KTR", F_PCT, 0, 127, 64, 0, 0},
     },
     .presets = ANALOG_PRESETS,
+    .preset = analog_preset,
     .npresets = NELEM(ANALOG_PRESETS),
     .note_on = analog_note_on,
     .render = analog_render,
     .desc = analog_desc,
     .knob = {P_E4, P_E5, P_ATK, P_REL},
-    .keep = 0x03,                /* the filter */
+    .keep = 0x73,                /* the filter (LP24: s[4..6] too) */
 };

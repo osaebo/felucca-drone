@@ -435,8 +435,11 @@ static int test_sound_loads(void)
                  preset_pat_hint() == 12 && ui.ppick == 12 && str_eq(PATTERNS[12].name, "ARP"));
     t->p[P_AMODE] = 2;
     before = *t;
-    for (i = 0; i < 6u; i++)                      /* several loads, into the next engine */
-        turn(EN_PRESET, 1);
+    {   /* several loads, into the next engine (the DRONE fork: ANALOG has more presets, so as many as it takes) */
+        uint32_t nturn = ENGINES[0]->npresets - t->preset;
+        for (i = 0; i < nturn; i++)
+            turn(EN_PRESET, 1);
+    }
     bad += check("browsing on, into another engine: the steps still untouched", t->eng_req != before.eng_req &&
                  !memcmp(t->step, before.step, sizeof t->step) && t->p[P_AMODE] == 2);
     bad += check("browsing keeps the copy from before the first load", undo.trk == 1u && undo.what == UNDO_SOUND &&
@@ -1391,9 +1394,9 @@ static int test_favorites(void)
     up_store(31, "Favorite");
     up_load(31);
     turn(EN_K3, 1);
-    bad += check("user slot 32 has its own favorite reference", favorite_has(NENGINES, 31) && preset_favorite());
+    bad += check("user slot 32 has its own favorite reference", favorite_has(ENG_USER, 31) && preset_favorite());
     up_store(31, "Renamed");
-    bad += check("overwriting or renaming a user slot retains its star", favorite_has(NENGINES, 31));
+    bad += check("overwriting or renaming a user slot retains its star", favorite_has(ENG_USER, 31));
     up_put(31, 0);
     bad += check("successful erasure removes the user slot star and source label",
                  !favorite_has(NENGINES, 31) && !up_used(31) && !TSEL->user);
@@ -1511,7 +1514,7 @@ static int test_categories(void)
     up_load(4);
     pos = preset_pos(&total);
     bad += check("  the user preset is in the LEAD list (after the factory leads), not in BASS",
-                 pos == total - 1u && preset_at(pos, &k) == NENGINES && k == 4u &&
+                 pos == total - 1u && preset_at(pos, &k) == ENG_USER && k == 4u &&
                  (list_set(1u + CAT_BASS), preset_pos(&total) == total));
     list_set(0);
     go_page(GR_USER);
@@ -4001,14 +4004,14 @@ static int test_quick_layers(void)
     lay_combo(B_EDIT, white(eng_rank(2)));             /* (the keys: the engines one can pick, engines.c eng_vis) */
     ok = TSEL->eng_req == 2u && TSEL->preset == 0u && ui.layer == LAYER_EDIT && sync_reload && !gates();
     key_up(white(eng_rank(2))); frame();
-    key_down(white(1)); key_up(white(1)); frame();
-    ok &= TSEL->eng_req == ENGI_FM6;                    /* (G3: FM6, second in ENGINE_ORDER) */
+    key_down(white(2)); key_up(white(2)); frame();
+    ok &= TSEL->eng_req == ENGI_FM6;                    /* (A3: FM6, third in the fork's ENGINE_ORDER: DRONE first) */
     key_down(white(NENG_SHOWN - 1u)); key_up(white(NENG_SHOWN - 1u)); frame();
     ok &= TSEL->eng_req == ENGI_DRUM;                   /* (the last key: DRUM) */
     ok &= !memcmp(TSEL->step, before.step, sizeof before.step) && TSEL->p[P_SLEN] == before.p[P_SLEN] &&
           TSEL->p[P_SLCR] == SL_STUT;
     btn_up(B_EDIT); frame();
-    bad += check("EDIT + white key n: the n-th engine shown (FM6 2nd, DRUM last), while playing; steps, LEN, SLICER stay", ok);
+    bad += check("EDIT + white key n: the n-th engine shown (FM6 3rd, DRUM last), while playing; steps, LEN, SLICER stay", ok);
     hold(B_SAVE);
     bad += check("  SAVE held: UNDO back to before the layer's loads, the steps untouched",
                  TSEL->eng_req == 0u && TSEL->preset == before.preset && !memcmp(TSEL->step, before.step, sizeof before.step));
@@ -4993,7 +4996,7 @@ static int test_fm6_charts(void)
 static int test_fm4_retired(void)
 {
     int bad = 0, ok = 1;
-    uint32_t i, k, e, total, seen = 0, all = ((1u << NENGINES) - 1u) & ~(1u << ENGI_DIGITAL);
+    uint32_t i, k, e, total, seen = 0, all = ((1u << NENGINES) - 1u) & ~(1u << ENGI_DIGITAL) & ~(1u << ENGI_HOLE);
     int16_t p[P_COUNT];
     uint8_t v[FP_SIZE + 1u];
     ui_power_on();
@@ -5005,7 +5008,7 @@ static int test_fm4_retired(void)
         if (e < NENGINES)
             seen |= 1u << e;
     }
-    bad += check("PRESETS: the list holds every engine's presets but DIGITAL's", seen == all && NENG_SHOWN == NENGINES - 1u);
+    bad += check("PRESETS: the list holds every engine's presets but DIGITAL's", seen == all && NENG_SHOWN == NENGINES - 2u);
     go_page(GR_BROWSE);
     set_engine_of(TSEL, 0);
     for (i = 0, seen = 0; i < NENG_SHOWN; i++) {
@@ -5014,9 +5017,9 @@ static int test_fm4_retired(void)
     }
     bad += check("PRESETS KNOB 2: the engines in order, DIGITAL skipped, back to the first",
                  seen == all && TSEL->eng_req == 0u && eng_step(0, 1) == ENGI_FM6 && eng_step(ENGI_FM6, 1) == 2u &&
-                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == ENGI_DRUM);
+                 eng_step(ENGI_FM6, -1) == 0u && eng_step(0, -1) == ENGI_DRONE && eng_step(ENGI_DRONE, -1) == ENGI_DRUM);
     {   /* the display order (engines.c ENGINE_ORDER): every engine one can pick once; the PRESETS list follows it */
-        static const char *const ORDER[] = {"ANALOG", "FM6", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN",
+        static const char *const ORDER[] = {"DRONE", "ANALOG", "FM6", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN",
                                             "PHYS", "NOISE", "SLICE", "DRUM"};
         uint32_t last = 0xFFu, r = 0, n = 0;
         ok = NENG_SHOWN == NELEM(ORDER);

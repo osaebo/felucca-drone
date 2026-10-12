@@ -233,6 +233,9 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drone_demo" tests/drone_demo.c -lm
     mkdir -p build/drone_demo
     run "DRONE: every preset rendered (build/drone_demo), its cost" "$OUT/drone_demo" build/drone_demo
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mono_demo" tests/mono_demo.c -lm
+    mkdir -p build/mono_demo
+    run "monosynth presets (LP24 ladder, glide): a phrase each (build/mono_demo)" "$OUT/mono_demo" build/mono_demo
     mkdir -p build/tracks_demo
     run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/project_test" tests/project_test.c -lm

@@ -1353,7 +1353,7 @@ static void graph_browse(void)
         int32_t hint = sel ? preset_pat_hint() : -1;    /* the suggested pattern */
         if (index >= total) continue;
         e = preset_at(index, &k);
-        if (e == NENGINES) {                             /* user preset: "U07" and its name */
+        if (e == ENG_USER) {                              /* user preset: "U07" and its name */
             up_slot_label(tag, k);
             up_name(k, nm);
         } else {

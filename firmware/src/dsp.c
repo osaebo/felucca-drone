@@ -110,6 +110,36 @@ static inline int32_t tsvf_lp(const tsvf_t *c, int32_t in, int32_t *ic1, int32_t
     return v2;
 }
 
+/* A 4-pole (24 dB) transistor-ladder low-pass, the DRONE fork's LP24 (the filter TYPE of ANALOG and DRONE): four
+ * trapezoidal one-poles (G = g / (1 + g), the SVF's g = tan(pi fc / FS)), feedback k from the last output a sample ago
+ * into a tanh at the input (the ladder's saturation: it rounds the drive and bounds the self-oscillation, k up to ~4.4
+ * at RES 127). The pass band loses level as k grows, as a ladder does; (1 + k / 2) of it is given back.
+ * State z[0..3] the stages, z[4] the last output: +-65536 at most, so (u - z) * G stays in 32 bits (G Q14) */
+typedef struct { int32_t g, k, comp; } lad_t;
+static inline void lad_coef(lad_t *c, int32_t cut, int32_t res)     /* cut: 0..127 << 8, res 0..127 */
+{
+    int32_t i, g;
+    cut = clamp(cut, 0, 127 << 8);
+    i = cut >> 8;
+    g = SVF_G[i];
+    if (i < 127)
+        g += ((SVF_G[i + 1] - g) * (cut & 255)) >> 8;
+    c->g = (g << 14) / (4096 + g);                     /* Q14, < 16384 */
+    c->k = clamp(res, 0, 127) * 18000 / 127;           /* Q12, 0 .. ~4.4 */
+    c->comp = 4096 + (c->k >> 1);                      /* Q12, 1 .. ~3.2 */
+}
+static inline int32_t lad_tick(const lad_t *c, int32_t in, int32_t *z)
+{
+    int32_t u = softclip(in - ((c->k * z[4]) >> 12)), i;
+    for (i = 0; i < 4; i++) {
+        int32_t v = ((u - z[i]) * c->g) >> 14, y = v + z[i];
+        z[i] = clamp(y + v, -65536, 65536);
+        u = y;
+    }
+    z[4] = clamp(u, -65536, 65536);
+    return (z[4] * c->comp) >> 12;
+}
+
 /* amplitude ramp over the block. Blocks are always CTL long, so x / CTL is a
  * shift (rounded towards zero, as a division); the compiler at -Os keeps
  * even constant divisions as a hardware divide, once per sample and voice */

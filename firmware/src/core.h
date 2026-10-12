@@ -229,6 +229,9 @@ typedef struct {                 /* an engine (engines.c ENGINES[]; the eng_*.c 
      * in, 0 = none: a part plays one engine at a time, so they share one region; on a switch to the engine
      * (after the old one's fade) the region is zeroed when another engine had it (eng_mem_claim) */
     uint16_t mem;
+    /* optional (the DRONE fork): what factory preset pi sets beyond the engine's values, after a load has put the
+     * rest of the sound to its defaults (ui.c apply_preset_to): the filter TYPE, the LFO, glide, the matrix ... */
+    void (*preset)(struct track *t, uint32_t pi);
 } engine_t;
 
 /* ------------------------------------------------- tracks, the song --- */

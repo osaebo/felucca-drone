@@ -30,6 +30,24 @@ So each preset moves as it loads. They are ABYSS, MONOLITH, CATACOMB, TRITONE, S
 SOLAR WIND, RED GIANT, ORBIT, COSMODRONE, SCREAMER, DEEP FIELD, SOL SIX, IRON CHOIR, BLACK SUN, HIVE, BELL TOMB,
 FOLDED, STATIC SEA, AURORA, HALO, SUS VAULT, WIDE ARC, RUST, PULSAR, ICE CAVE, GHOST, MAGMA, DESERT and NEUTRON.
 
+## LP24 ladder and the monosynth presets
+
+The filter TYPE (EDIT > FILTER, on ANALOG and DRONE) has a fourth value, **LP24**: a 4-pole, 24 dB transistor-ladder
+low-pass.
+- There is a tanh at its input. Drive (ANALOG's DRV, DRONE's GRIT) and high resonance round off into it, as they do
+  on the classic 70s monosynths.
+- The bass thins out as the resonance rises.
+- RES 127 self-oscillates.
+
+Fourteen monosynth presets use it:
+- **DRONE**, three oscillators: 3OSC BASS, BIG MONO, SOLO LEAD, FIFTH LEAD, PEDAL BASS, SQUELCH, STAB BRASS,
+  THICK SQR. They use the new MODE stacks UNI- (two in unison and one an octave down), UNI+ and 5+8.
+- **ANALOG**: LADDER BASS, PROG LEAD, FLUTE 70S, DEEP TRI, SQR FUNK, FAT BRASS.
+
+They play MONO (legato) with low-note priority. Leads have glide and a late vibrato. The DRONE ones track the keyboard
+through the matrix (KEY → CUT). Felucca has one envelope for both amplitude and filter, so a pluck comes from the
+decay down to the sustain level with the filter envelope's amount.
+
 ## HOLD (any engine)
 
 Set ARP 2 > HOLD to ON while ARP MODE is OFF:

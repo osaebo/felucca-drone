@@ -26,14 +26,18 @@
  * (drone_vs_t, one per voice slot); voice_t keeps s[0] s[1] the filter, s[2] the random numbers, s[3] the SUB's phase,
  * s[4] the cutoff's walk */
 static const char *const N_DRONE_MODE[] = {"UNI", "OCT", "5TH", "4TH", "MIN", "TRI", "CLUS", "DARK",
-                                           "SUS4", "MAJ7", "O+5", "WIDE", "SOL6", "MIN6", "CLU6", "VOI6"};
+                                           "SUS4", "MAJ7", "O+5", "WIDE", "SOL6", "MIN6", "CLU6", "VOI6",
+                                           "UNI-", "UNI+", "5+8"};
 /* the stacks: oscillator count and the intervals above OSC 1 (semitones; OSC 1 is 0) */
-static const struct { uint8_t n; int8_t iv[6]; } DRONE_STACK[16] = {
+static const struct { uint8_t n; int8_t iv[6]; } DRONE_STACK[] = {
     {3, {0, 0, 0}}, {3, {0, 12, -12}}, {3, {0, 7, -12}}, {3, {0, 5, -7}},
     {3, {0, 3, 7}}, {3, {0, 6, -12}}, {3, {0, 1, 2}}, {3, {0, -12, 1}},
     {3, {0, 5, 7}}, {3, {0, 4, 11}}, {3, {0, 12, 19}}, {3, {0, 19, -12}},
     {6, {0, 7, 12, 19, 24, -12}}, {6, {0, 3, 7, 12, 15, -12}}, {6, {0, 1, -1, 12, -12, 2}}, {6, {0, 6, -12, 1, -24, 13}},
+    /* the classic three-oscillator monosynth: two in unison and one an octave down (or up), root fifth octave */
+    {3, {0, 0, -12}}, {3, {0, 0, 12}}, {3, {0, 7, 12}},
 };
+_Static_assert(NELEM(DRONE_STACK) == NELEM(N_DRONE_MODE), "DRONE_STACK: one per MODE");
 static const int8_t DRONE_DET[6] = {0, 2, -2, 1, -1, 3};     /* each oscillator's share of the spread, DTN / 4 cents */
 #define DRONE_POLY 4
 
@@ -59,6 +63,7 @@ static void drone_note_on(track_t *t, voice_t *v)
         v->s[2] = 0x2F6B3A1 + (int32_t)v->age * 7919;   /* the random numbers, never 0 */
     v->s[3] = 0;
     v->s[4] = 0;                        /* the cutoff's walk starts where CUT is set */
+    v->s[5] = v->s[6] = v->s[7] = 0;    /* LP24: its stages 3, 4 and last output */
 }
 
 /* one step of an Ornstein-Uhlenbeck walk (Q15, std ~8000): leak 1/4096 a block, a uniform step of +-256 */
@@ -111,7 +116,7 @@ static inline __attribute__((always_inline)) void drone_body(track_t *t, voice_t
 {
     const int16_t *p = t->p;
     drone_vs_t *o = drone_vs(t, v);
-    uint32_t mode = (uint32_t)p[P_E0] & 15u, ft = (uint32_t)p[P_FTYPE], no = DRONE_STACK[mode].n, i, k;
+    uint32_t mode = (uint32_t)p[P_E0] % NELEM(DRONE_STACK), ft = (uint32_t)p[P_FTYPE], no = DRONE_STACK[mode].n, i, k;
     int32_t spread = p[P_E1], sub = p[P_E3] * 200, drift = p[P_E6], grit = p[P_E7];
     int32_t wave = drone_wave(t, m);                                  /* SHP routings sweep it */
     const uint32_t tb = ta + 1u;                                             /* the two types it crossfades */
@@ -124,6 +129,8 @@ static inline __attribute__((always_inline)) void drone_body(track_t *t, voice_t
     int32_t gain = no > 3u ? 5 : 10;                                  /* the sum of 3 or 6 to ~+-30700 (/32) */
     int32_t cut, kd;
     tsvf_t flt;
+    lad_t lc = {0, 0, 4096};
+    int32_t z[5] = {v->s[0], v->s[1], v->s[5], v->s[6], v->s[7]};   /* LP24's state (the SVF's: s[0] s[1]) */
     for (k = 0; k < no; k++) {                                        /* pitches, walks: once a block */
         int32_t fine = m->fine;
         if (drift) {
@@ -139,6 +146,8 @@ static inline __attribute__((always_inline)) void drone_body(track_t *t, voice_t
     cut = (p[P_E4] << 8) + m->cutoff + ((wf * drift) >> 9);          /* the cutoff's walk: ~+-8 steps (std) */
     kd = 8192 - p[P_E5] * 7600 / 127;                                 /* tsvf_coef's damping, Q12 */
     tsvf_coef_k(&flt, cut, kd);
+    if (ft == 3u)                                                     /* LP24: the ladder (dsp.c lad_tick) */
+        lad_coef(&lc, cut, p[P_E5]);
     for (i = 0; i < n; i++) {
         int32_t sb = osc_sine(ph3), nz = ta >= 3u ? (int32_t)(noise32(&nst) >> 17) - 16384 : 0;
         int32_t s = 0, v1, v2, v3, y;
@@ -159,6 +168,11 @@ static inline __attribute__((always_inline)) void drone_body(track_t *t, voice_t
         else
             s = softclip(s);                                          /* tanh: the SUB's peaks round off */
         s >>= 1;
+        if (ft == 3u) {                                               /* LP24: GRIT drives the ladder's tanh */
+            s = soft_knee(lad_tick(&lc, s, z), 16000) << 1;
+            out[i] += voice_amp(s, m, i) << 1;
+            continue;
+        }
         v3 = s - ic2;                                                 /* the SVF, its taps (eng_analog.c analog_tap) */
         v1 = (flt.a1 * ic1 + flt.a2 * v3) >> 13;
         v2 = ic2 + ((flt.a2 * ic1 + flt.a3 * v3) >> 13);
@@ -172,6 +186,13 @@ static inline __attribute__((always_inline)) void drone_body(track_t *t, voice_t
     }
     for (k = 0; k < no; k++)
         o->ph[k] = ph[k];
+    if (ft == 3u) {
+        ic1 = z[0];
+        ic2 = z[1];
+        v->s[5] = z[2];
+        v->s[6] = z[3];
+        v->s[7] = z[4];
+    }
     v->s[0] = ic1;
     v->s[1] = ic2;
     v->s[2] = nst;
@@ -207,6 +228,9 @@ static void drone_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
 /* name, {MODE, DTN, WAVE, SUB, CUT, RES, DRFT, GRIT}, {A D S R}, fenv, mono, FX(dist, chorus, delay, reverb), PAT */
 #define DP(nm, mo, dt, wv, sb, ct, rs, df, gr, a, r, d_, c_, l_, v_, pt) \
     {nm, {mo, dt, wv, sb, ct, rs, df, gr}, {a, 127, 127, r}, 0, 0, FX(d_, c_, l_, v_), PAT(pt)}
+/* a monosynth preset: its own A D S R, the filter envelope's amount, MONO */
+#define DPM(nm, mo, dt, wv, sb, ct, rs, df, gr, a, d, su, r, fe, d_, c_, l_, v_, pt) \
+    {nm, {mo, dt, wv, sb, ct, rs, df, gr}, {a, d, su, r}, fe, 1, FX(d_, c_, l_, v_), PAT(pt)}
 static const preset_t DRONE_PRESETS[] = {
     DP("ABYSS", 7, 14, 0, 110, 38, 40, 60, 10, 110, 115, 0, 20, 25, 110, 8),
     DP("MONOLITH", 1, 10, 10, 90, 46, 55, 40, 30, 95, 110, 10, 10, 20, 95, 8),
@@ -241,14 +265,33 @@ static const preset_t DRONE_PRESETS[] = {
     DP("MAGMA", 7, 30, 96, 127, 40, 70, 60, 100, 90, 110, 30, 0, 20, 90, 8),
     DP("DESERT", 4, 10, 36, 50, 56, 60, 50, 20, 100, 114, 0, 30, 40, 110, 5),
     DP("NEUTRON", 13, 40, 30, 90, 34, 95, 80, 60, 95, 112, 10, 20, 30, 100, 8),
+    /* the classic three-oscillator monosynth through the LP24 ladder (DRONE_EXTRA: LP24, glide, LOW priority, KEY ->
+     * CUT as keyboard tracking); the amp envelope's decay to a lower sustain shapes the filter too (fenv) */
+    DPM("3OSC BASS", 16, 12, 0, 0, 30, 45, 10, 35, 0, 62, 95, 30, 55, 10, 0, 10, 15, 2),
+    DPM("BIG MONO", 1, 16, 8, 40, 36, 55, 12, 50, 0, 70, 90, 35, 45, 15, 0, 15, 20, 8),
+    DPM("SOLO LEAD", 17, 10, 0, 0, 58, 50, 8, 40, 2, 80, 110, 50, 30, 0, 15, 35, 30, 4),
+    DPM("FIFTH LEAD", 18, 8, 20, 0, 54, 55, 10, 45, 4, 80, 105, 50, 35, 0, 15, 35, 30, 4),
+    DPM("PEDAL BASS", 16, 8, 16, 80, 26, 30, 8, 20, 10, 90, 100, 60, 25, 0, 0, 10, 25, 8),
+    DPM("SQUELCH", 0, 6, 32, 0, 28, 100, 6, 40, 0, 58, 75, 25, 63, 10, 0, 20, 15, 1),
+    DPM("STAB BRASS", 0, 18, 0, 0, 40, 30, 10, 30, 28, 80, 100, 45, 45, 0, 20, 20, 35, 6),
+    DPM("THICK SQR", 10, 10, 32, 30, 50, 40, 10, 35, 2, 75, 100, 45, 35, 0, 15, 30, 30, 4),
 };
 #undef DP
+#undef DPM
 
 /* what a preset sets beyond the engine's values (ui.c apply_preset_to, after the defaults; drone_preset_extra):
  * the filter TYPE (0 LP 1 BP 2 HP); the LFO: RATE, WAVE (0 SIN 1 TRI 2 SAW 3 SQR 4 S&H), SYNC (0 OFF, 1 4BAR,
  * 2 2BAR ...), FREE running, its depth on the cutoff (FLT), the WAVE (SHP) and the level (AMP); the matrix's first
  * slot: SRC (1 LFO, 5 RAND, 9 S&H, 10 SLEW), DST (1 PITCH 2 CUT 3 SHP 5 PAN 9 REV) and AMT */
-typedef struct { uint8_t ft, rate, wave, sync; int8_t flt, shp; uint8_t amp, msrc, mdst; int8_t mamt; } drone_extra_t;
+typedef struct {
+    uint8_t ft, rate, wave, sync;
+    int8_t flt, shp;
+    uint8_t amp, msrc, mdst;
+    int8_t mamt;
+    uint8_t gl, prio;            /* glide (GLD), note priority (1 LOW) */
+    int8_t pit;                  /* vibrato: the LFO on the pitch (PIT), faded in over FADE */
+    uint8_t fade;
+} drone_extra_t;
 static const drone_extra_t DRONE_EXTRA[] = {
     {0, 8, 0, 0, 10, 0, 0, 0, 0, 0},            /* ABYSS: a slow sine on the cutoff */
     {0, 15, 1, 0, 8, 0, 0, 0, 0, 0},            /* MONOLITH */
@@ -282,6 +325,15 @@ static const drone_extra_t DRONE_EXTRA[] = {
     {0, 5, 1, 0, 0, 14, 0, 0, 0, 0},            /* MAGMA */
     {0, 0, 0, 1, 12, 0, 0, 0, 0, 0},            /* DESERT */
     {1, 25, 4, 0, 0, 0, 0, 9, 2, 14},           /* NEUTRON: BP, S&H */
+    /* the monosynth set: LP24, KEY -> CUT (keyboard tracking), glide, LOW priority, a late vibrato on the leads */
+    {3, 0, 0, 0, 0, 0, 0, 4, 2, 24, 0, 1, 0, 0},       /* 3OSC BASS */
+    {3, 0, 0, 0, 0, 0, 0, 4, 2, 24, 20, 1, 0, 0},      /* BIG MONO */
+    {3, 86, 0, 0, 0, 0, 0, 4, 2, 40, 50, 1, 1, 95},    /* SOLO LEAD */
+    {3, 86, 0, 0, 0, 0, 0, 4, 2, 40, 40, 1, 1, 95},    /* FIFTH LEAD */
+    {3, 0, 0, 0, 0, 0, 0, 4, 2, 16, 0, 1, 0, 0},       /* PEDAL BASS */
+    {3, 0, 0, 0, 0, 0, 0, 4, 2, 24, 30, 1, 0, 0},      /* SQUELCH */
+    {3, 0, 0, 0, 0, 0, 0, 4, 2, 32, 10, 1, 0, 0},      /* STAB BRASS */
+    {3, 86, 0, 0, 0, 0, 0, 4, 2, 32, 30, 1, 1, 90},    /* THICK SQR */
 };
 _Static_assert(NELEM(DRONE_EXTRA) == NELEM(DRONE_PRESETS), "DRONE_EXTRA: one per preset");
 
@@ -301,13 +353,19 @@ static void drone_preset_extra(track_t *t, uint32_t pi)
         t->p[P_M1DST] = x->mdst;
         t->p[P_M1AMT] = x->mamt;
     }
+    t->p[P_GLIDE] = x->gl;
+    t->p[P_PRIO] = x->prio;
+    if (x->pit) {                       /* vibrato (the LFO's rate is RATE) */
+        t->p[P_LD_PIT] = x->pit;
+        t->p[P_LFADE] = x->fade;
+    }
 }
 
 static const engine_t ENG_DRONE = {
     .name = "DRONE",
     .page_title = {"OSC", "FLT"},
     .edit = {
-        {"MODE", F_ENUM, 0, 15, 7, N_DRONE_MODE, 0},
+        {"MODE", F_ENUM, 0, (int16_t)(NELEM(N_DRONE_MODE) - 1), 7, N_DRONE_MODE, 0},
         {"DTN", F_INT, 0, 127, 14, 0, "ct"},
         {"WAVE", F_PCT, 0, 127, 0, 0, 0},
         {"SUB", F_PCT, 0, 127, 90, 0, 0},
@@ -322,7 +380,8 @@ static const engine_t ENG_DRONE = {
     .render = drone_render,
     .knob = {P_E4, P_E5, P_E2, P_E6},     /* HOME: CUT RES WAVE DRFT */
     .poly = DRONE_POLY,
-    .keep = 0x13,                         /* the filter and the cutoff's walk over a retrigger */
+    .keep = 0xF3,                         /* the filter (LP24: s[5..7] too), the cutoff's walk over a retrigger */
+    .preset = drone_preset_extra,
     .mem = sizeof(drone_vs_t) * NVOICE,
 };
 
