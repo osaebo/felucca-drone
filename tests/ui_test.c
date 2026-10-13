@@ -1964,6 +1964,8 @@ static int screen_gray(void)
     uint32_t i;
     for (i = 0; i < 240u * 240u; i++) {
         uint16_t c = swap16(host_screen[i]);
+        if (drn_colour_on && i / 240u >= Y_GRAPH && i / 240u < Y_GRAPH + H_GRAPH)
+            continue;                               /* (the DRONE fork: the drone field, a picture in colour) */
         if ((c >> 11) != (c & 31u) || ((c >> 5) & 63u) != (c >> 11) * 2u)
             return 0;
     }

@@ -612,7 +612,8 @@ static void font_scene(const char *mode, const char *name)
     }
 }
 /* GREY: every pixel RGB565 gray (R = B, G = 2 R); MONO (black and white, its edges blended per channel): neutral
- * (R = B, G within 2 of 2 R, the 5-6-5 rounding). Other palettes: nothing */
+ * (R = B, G within 2 of 2 R, the 5-6-5 rounding). Other palettes: nothing. (The DRONE fork: the drone field in the
+ * panel is a picture in colour on GREY: the panel's rows are left out while it shows; MONO keeps its black and white) */
 static uint32_t mono_bad;
 static void mono_check(void)
 {
@@ -621,6 +622,8 @@ static void mono_check(void)
     for (i = 0; i < 240u * 240u; i++) {
         uint16_t c = swap16(host_screen[i]);
         int32_t d = (int32_t)((c >> 5) & 63u) - (int32_t)(c >> 11) * 2;
+        if (!bw && drn_colour_on && i / 240u >= Y_GRAPH && i / 240u < Y_GRAPH + H_GRAPH)
+            continue;
         if ((c >> 11) != (c & 31u) || (bw ? d < -2 || d > 2 : d != 0)) {
             if (!mono_bad) fprintf(rep, "%s %s: pixel %u,%u = %04x off %s\n", bw ? "MONO" : "GREY", cur_name, i % 240u, i / 240u, c,
                                    bw ? "neutral" : "gray");

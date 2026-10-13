@@ -186,6 +186,9 @@ static const struct {
      * now that the arpeggiator is the track's and a preset no longer switches it on */
     {"ARP", {48, 51, 55, 60, 63, 67, 72, 75, 48, 51, 55, 60, 63, 67, 72, 75},       /* 13 */
      {1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}},
+    /* the DRONE fork: a slow, deep beat for the lofi kits, no hats: kicks, the low snare, a low and a floor tom */
+    {"DEEP", {36, 0, 0, 36, 38, 0, 0, 41, 0, 36, 0, 0, 38, 0, 45, 41},             /* 14 */
+     {1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0}},
 };
 #undef T_
 #define NPATTERNS (sizeof PATTERNS / sizeof PATTERNS[0])

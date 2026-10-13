@@ -32,20 +32,20 @@ FOLDED, STATIC SEA, AURORA, HALO, SUS VAULT, WIDE ARC, RUST, PULSAR, ICE CAVE, G
 
 ## The drone field (the screen)
 
-On HOME, and on DRONE's EDIT and FILTER pages, the panel shows the drone as it plays instead of the scope:
-- **Ribbons:** each oscillator of the stack is a ribbon at its interval's height, an octave being 24 px.
-  - It is drawn with the engine's own oscillator types at the current WAVE, through GRIT's drive.
-  - It flows at its pitch's rate and slips against the others by DTN, so the beating is visible.
-  - It wobbles with DRFT's random walks, read from the sounding voice.
-  - Two fading trails follow it.
-- **Sub:** SUB is a swell along the bottom.
-- **Filter:**
-  - The cutoff is a line on the same pitch scale, moving with the LFO and the cutoff's walk.
-  - What the filter removes is veiled: above for LP and LP24, below for HP, outside a band for BP. Its edge is soft at
-    12 dB and hard for LP24.
-  - Ribbons in the veil fade, and resonance makes the line glow.
-  - Dust motes drift and twinkle in the veiled space.
-- **Level:** the ribbons grow with the sounding voice and fall back when nothing plays.
+On HOME, and on DRONE's EDIT and FILTER pages, the panel shows the drone as a 3D stage instead of the scope.
+- **Stage:** a night stage with a floor grid running to a glowing horizon, and stars drifting and twinkling above it.
+- **Lanes:** each oscillator of the stack is a lane on the floor, sorted by pitch. The lowest is nearest, the
+  highest farthest, and SUB is the front lane. Lanes shrink, rise and fade into the violet haze as they recede.
+- **Lane colours:** a spectrum running from coral at the front through amber, mint and sky to violet at the back.
+  SUB is magenta.
+- **Ribbons:** each lane is a ribbon of the oscillator's own wave at the current WAVE, through GRIT's drive. It
+  flows at its pitch's rate, slips against the others by DTN and wobbles with DRFT's walks.
+- **Depth:** each ribbon has four slices, now and 60, 120 and 180 ms ago, each one a little farther back. Every
+  slice is a shaded opaque sheet, so the beating shows as a moving surface.
+- **Filter:** a translucent curtain across the stage at the depth of the cutoff among the lanes, with its top edge
+  glowing with RES (2 px for LP24). LP and LP24 veil what is behind it, HP fades what is in front of it, and BP fades
+  what lies outside its band.
+- **Palettes:** the field is a colour picture on every palette, GREY included. MONO keeps its black and white.
 
 ## LP24 ladder and the monosynth presets
 
@@ -64,6 +64,15 @@ Fourteen monosynth presets use it:
 They play MONO (legato) with low-note priority. Leads have glide and a late vibrato. The DRONE ones track the keyboard
 through the matrix (KEY → CUT). Felucca has one envelope for both amplitude and filter, so a pluck comes from the
 decay down to the sustain level with the filter envelope's amount.
+
+## Lofi drum kits (DRUM)
+
+There are four kits after DRUM KIT: LOFI DEEP, SUB THUMP, DUST BOWL and TAPE TOMS.
+- **Sound:** each is tuned down, darker and longer, with the round kick and some drive.
+- **No hats:** the hi-hat and bell lanes are set to 0 (their LANES levels).
+- **Lofi texture:** each sets the track's INSERT, a CRUSH (8 to 11 bits at 9 to 15 kHz under a low-pass) or, on
+  SUB THUMP, a dark soft drive.
+- **Pattern:** they suggest the new pattern DEEP (SAVE > PHRASES 14): kicks, the low snare and toms, no hats.
 
 ## HOLD (any engine)
 

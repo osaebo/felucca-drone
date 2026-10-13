@@ -312,10 +312,38 @@ static int32_t drum_keys(const track_t *t, uint32_t k)
     return clamp(29 + 12 * song.octave + (int32_t)k, 0, 127);
 }
 
-/* {KIT, TUNE, TONE, DECY, SNAP, ACC, KICK, DRV}; every kit suggests the BEAT pattern (GM notes) */
+/* {KIT, TUNE, TONE, DECY, SNAP, ACC, KICK, DRV}; the kit suggests the BEAT pattern (GM notes), the DRONE fork's
+ * lofi kits DEEP. Their KIT values: 0 STD, 4 80, 5 10, 6 66, 7 55 (DK_*) */
 static const preset_t DRUM_PRESETS[] = {
     {"DRUM KIT", DRUM_KIT_E, {0, 100, 127, 100}, 0, 0, FX(0, 0, 0, 20), PAT(12)},   /* (core.h: SAMPLE PERC's too) */
+    /* the DRONE fork: lofi and deep, no hats (DRUM_EXTRA: the lanes' levels, a CRUSH or a drive on the INSERT) */
+    {"LOFI DEEP", {4, 30, 34, 92, 40, 90, 1, 40}, {0, 100, 127, 100}, 0, 0, FX(0, 0, 10, 30), PAT(14)},
+    {"SUB THUMP", {0, 22, 20, 110, 30, 100, 1, 70}, {0, 100, 127, 100}, 0, 0, FX(0, 0, 0, 25), PAT(14)},
+    {"DUST BOWL", {6, 36, 40, 80, 50, 90, 1, 30}, {0, 100, 127, 100}, 0, 0, FX(0, 10, 15, 35), PAT(14)},
+    {"TAPE TOMS", {7, 26, 30, 100, 70, 90, 1, 50}, {0, 100, 127, 100}, 0, 0, FX(0, 0, 10, 40), PAT(14)},
 };
+/* the lofi kits beyond their values: each lane's LEVEL (KICK SNARE CLAP HATCL HATOP TOM RIM BELL: the hats and the
+ * bell silent), the INSERT (TYPE, A B C, MIX: CRUSH's BITS RATE LPF, or SOFT's DRIVE TONE LEVEL) */
+static const struct { uint8_t lane[NLANE], it, ia, ib, ic, mix; } DRUM_EXTRA[] = {
+    {{127, 96, 60, 0, 0, 127, 80, 0}, 5, 64, 96, 92, 110},      /* LOFI DEEP: 9 bits at 11 kHz under 2.9 kHz */
+    {{127, 70, 0, 0, 0, 127, 60, 0}, 1, 60, 70, 112, 80},       /* SUB THUMP: a soft drive, dark */
+    {{127, 90, 50, 0, 0, 127, 90, 0}, 5, 56, 88, 85, 127},      /* DUST BOWL: 8 bits at 8.8 kHz */
+    {{127, 60, 0, 0, 0, 127, 90, 0}, 5, 80, 104, 100, 90},      /* TAPE TOMS: 11 bits at 14.7 kHz */
+};
+_Static_assert(NELEM(DRUM_EXTRA) + 1u == NELEM(DRUM_PRESETS), "DRUM_EXTRA: one per lofi kit");
+static void drum_preset_extra(track_t *t, uint32_t pi)
+{
+    uint32_t k;
+    if (pi < 1u || pi - 1u >= NELEM(DRUM_EXTRA))
+        return;
+    for (k = 0; k < NLANE; k++)
+        t->p[P_LN0 + k] = DRUM_EXTRA[pi - 1u].lane[k];
+    t->p[P_ITYPE] = DRUM_EXTRA[pi - 1u].it;
+    t->p[P_IA] = DRUM_EXTRA[pi - 1u].ia;
+    t->p[P_IB] = DRUM_EXTRA[pi - 1u].ib;
+    t->p[P_IC] = DRUM_EXTRA[pi - 1u].ic;
+    t->p[P_IMIX] = DRUM_EXTRA[pi - 1u].mix;
+}
 
 static const engine_t ENG_DRUM = {
     .name = "DRUM",
@@ -332,6 +360,7 @@ static const engine_t ENG_DRUM = {
     },
     .presets = DRUM_PRESETS,
     .npresets = NELEM(DRUM_PRESETS),
+    .preset = drum_preset_extra,
     .note_on = drum_note_on,
     .render = drum_render,
     .amp = drum_amp,

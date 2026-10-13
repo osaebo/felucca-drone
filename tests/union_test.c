@@ -40,6 +40,9 @@ static void uplay(track_t *t, uint32_t e, uint32_t pi, uint32_t base, uint32_t w
 {
     static const uint8_t CH[4] = {0, 4, 7, 12};
     uint32_t i;
+    if (e == ENGI_DRUM)                          /* (the DRONE fork appended DRUM's lofi kits: the switches keep 1.4's
+                                                  * one kit, so the hashes stay 1.4's) */
+        pi = 0;
     host_preset_req(t, e, pi);                   /* eng_req: the audio side switches (voice.c engine_block) */
     urun(wait_ms);
     for (i = 0; i < 4u; i++)
