@@ -42,9 +42,10 @@ On HOME, and on DRONE's EDIT and FILTER pages, the panel shows the drone as a 3D
   flows at its pitch's rate, slips against the others by DTN and wobbles with DRFT's walks.
 - **Depth:** each ribbon has four slices, now and 60, 120 and 180 ms ago, each one a little farther back. Every
   slice is a shaded opaque sheet, so the beating shows as a moving surface.
-- **Filter:** a translucent curtain across the stage at the depth of the cutoff among the lanes, with its top edge
-  glowing with RES (2 px for LP24). LP and LP24 veil what is behind it, HP fades what is in front of it, and BP fades
-  what lies outside its band.
+- **Filter:** a gate across the stage at the depth of the cutoff among the lanes: two glowing posts at the stage
+  edges and a running dashed beam (doubled for LP24), with the posts wider as RES rises. It is drawn over everything
+  and glides rather than jumps, so it never disappears. LP and LP24 fade the lanes behind it, HP fades those in front
+  of it, and BP fades those outside its band.
 - **Palettes:** the field is a colour picture on every palette, GREY included. MONO keeps its black and white.
 
 ## LP24 ladder and the monosynth presets

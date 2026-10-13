@@ -706,9 +706,12 @@ static void graph_wheel(const track_t *t, uint16_t c)
  *     has depth: four slices, now and 60, 120, 180 ms ago, a little farther each, every slice an opaque sheet down to
  *     the floor, shaded from its lit top into the floor's dark, so the past shows only where it rose above the present:
  *     the beating as a moving surface. The lanes' floor lines sit evenly up the screen (y 112 .. 54).
- *   - The filter is a translucent curtain across the stage at the depth of its cutoff among the lanes (CUT with the
- *     LFO and the cutoff's walk, against each lane's 4th harmonic): LP and LP24 veil what is behind it, HP fades what
- *     is in front, BP fades what is outside its band; its top edge in the accent, 2 px for LP24, glowing with RES.
+ *   - The filter is a gate across the stage (two glowing posts at its edges, a running dashed beam, drawn over
+ *     everything) at the depth of its cutoff among the lanes (CUT with the
+ *     LFO and the cutoff's walk, against each lane's 2nd harmonic; an octave beyond the front or back lane takes it to
+ *     the stage's front edge or its back), always there and gliding (a quarter of the way a frame, so a new note, the
+ *     S&H's steps or a lane passed never make it jump): LP and LP24 fade the lanes behind it, HP those in front, BP
+ *     those outside its band; its posts wider with RES, a double beam for LP24.
  *   - Colour: a night stage (a violet haze at the horizon, stars, a glowing horizon line, a purple floor grid), the
  *     lanes along a spectrum from coral at the front through amber, mint and sky to violet at the back, SUB magenta;
  *     every palette but MONO (GREY too: the field is a picture), MONO its black, white and grey.
@@ -735,22 +738,11 @@ static int32_t drn_at(const drn_look_t *L, uint32_t ph, uint32_t inc, uint32_t s
 #define DRN_CX 120
 #define DRN_HW 108                                   /* the stage's half width at the front */
 #define DRN_PTS 72                                   /* points across a ribbon */
+#define DRN_ZMAX 1060                                /* the curtain's farthest: just behind the back lane's place */
+static uint32_t drn_last[NPART];                     /* fm1_ms of the part's last field: the curtain's glide restarts after
+                                                      * a pause */
 static int32_t drn_s(int32_t z) { return (4096 * 1024) / (1024 + 2 * z); }   /* the scale at depth z, Q12 */
 static int32_t drn_fy(int32_t z) { return DRN_HY + ((DRN_NY - DRN_HY) * drn_s(z) >> 12); }   /* the floor's y at z */
-/* the canvas rows y0 .. y1 - 1, columns x0 .. x1 - 1, pct of the way to colour v: a translucent sheet */
-static void drn_tint(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t v, int32_t pct)
-{
-    int32_t x, y;
-    x0 = clamp(x0, 0, (int32_t)cv_w);
-    x1 = clamp(x1, 0, (int32_t)cv_w);
-    y0 = clamp(y0, 0, (int32_t)cv_h);
-    y1 = clamp(y1, 0, (int32_t)cv_h);
-    for (y = y0; y < y1; y++)
-        for (x = x0; x < x1; x++) {
-            uint16_t *q = &cv_px[(uint32_t)y * cv_w + (uint32_t)x];
-            *q = swap16(ux_mix(swap16(*q), v, pct));
-        }
-}
 /* the scene's colours. In colour (every palette but MONO, GREY too: the field is a picture): a night stage, a violet
  * haze at the horizon, the lanes along a spectrum from the warm front (low) to the cool back (high). MONO: its own
  * black, white and one grey, as every other screen */
@@ -776,7 +768,26 @@ static uint16_t drn_spectrum(int32_t f)              /* f 0 .. 1024: coral, ambe
     int32_t i = clamp(f, 0, 1023) >> 8;
     return drn_mix(ST[i], ST[i + 1], (clamp(f, 0, 1023) & 255) * 100 / 256);
 }
-static uint16_t veil_of(void) { return ux_mix(T_SURF, T_BG, 60); }
+/* the cutoff, drawn over everything (never hidden): a gate at depth zc, two glowing posts at the stage's edges (the
+ * ribbons stay inside them) joined by a dashed beam, its line on the floor between them; wider and brighter with RES,
+ * a double beam for LP24 */
+static void drn_cutline(int32_t zc, int32_t res, uint32_t ft, int colour, const drn_pal_t *P, uint32_t now)
+{
+    int32_t s = drn_s(zc), hw = DRN_HW * s >> 12, fy = drn_fy(zc), top = fy - (46 * s >> 12), x, pw = 1 + res / 64;
+    uint16_t edge = P->edge, glow = colour ? drn_mix(P->edge, P->floor0, 55) : ux_mix(T_ACCENT, T_SURF, 55);
+    cv_rect(DRN_CX - hw - pw - 1, top - 1, 1, fy - top + 2, glow);               /* the posts, a glow beside each */
+    cv_rect(DRN_CX + hw + pw, top - 1, 1, fy - top + 2, glow);
+    cv_rect(DRN_CX - hw - pw, top, pw, fy - top + 1, edge);
+    cv_rect(DRN_CX + hw, top, pw, fy - top + 1, edge);
+    for (x = DRN_CX - hw; x < DRN_CX + hw; x++)      /* the beam, dashed, its dashes running (the sound passing) */
+        if ((((uint32_t)x + now / 40u) & 7u) < 4u) {
+            cv_rect(x, top, 1, 1, edge);
+            if (ft == 3u)
+                cv_rect(x, top + 2, 1, 1, edge);
+        }
+    cv_rect(DRN_CX - hw, fy, 2 * hw, 1, glow);       /* its line on the floor (behind the ribbons in front: drawn here,
+                                                      * over them, faint) */
+}
 static void graph_drone(const track_t *t, uint16_t c)
 {
     const int16_t *p = t->p;
@@ -836,18 +847,32 @@ static void graph_drone(const track_t *t, uint16_t c)
         zl[k] = ((1024 * (DRN_NY - DRN_HY) / (y - DRN_HY)) - 1024) / 2;
     }
     /* the cutoff among the lanes: CUT + the LFO + the voice's walk, in semitones over the note, against each lane's
-     * 4th harmonic (24 semitones over it); its depth by the lanes it lies between */
+     * 2nd harmonic (12 semitones over it); its depth by the lanes it lies between */
     cut = (p[P_E4] << 8) + ((lfo * p[P_LD_FLT]) >> 7) + (vs && t->engine == ENGI_DRONE ? (vs->s[4] * drift) >> 9 : 0);
     cut = clamp(cut, 0, 127 << 8);
-    crel = (360 + (cut >> 8) * 137 / 10 - note16) / 16 - 24;
-    if (!nl || crel <= semi[0])
-        zc = 0;
-    else if (crel >= semi[nl - 1])
-        zc = nl > 1u ? 1024 + (crel - semi[nl - 1]) * 12 : 1024;
+    crel = 360 + cut * 137 / 2560 - note16 - 12 * 16;   /* 1/16 semitone (0.855 semitone a step of CUT) */
+    if (!nl)
+        zc = DRN_ZMAX / 2;
+    else if (crel <= semi[0] * 16)                   /* below the front lane: to the stage's front edge over an octave */
+        zc = zl[0] - (semi[0] * 16 - crel) * zl[0] / (12 * 16);
+    else if (crel >= semi[nl - 1] * 16)              /* above the back lane: to the back over an octave */
+        zc = zl[nl - 1] + (crel - semi[nl - 1] * 16) * (DRN_ZMAX - zl[nl - 1]) / (12 * 16);
     else {
-        for (k = 1; k < nl && crel > semi[k]; k++)
+        for (k = 1; k < nl && crel > semi[k] * 16; k++)
             ;
-        zc = semi[k] > semi[k - 1] ? zl[k - 1] + (zl[k] - zl[k - 1]) * (crel - semi[k - 1]) / (semi[k] - semi[k - 1]) : zl[k];
+        zc = semi[k] > semi[k - 1] ? zl[k - 1] + (zl[k] - zl[k - 1]) * (crel - semi[k - 1] * 16) / ((semi[k] - semi[k - 1]) * 16)
+                                   : zl[k];
+    }
+    zc = clamp(zc, 0, DRN_ZMAX);
+    {   /* glided: the curtain moves, never jumps (a new note, a lane passed, the S&H's steps), a quarter a frame */
+        static int32_t zs[NPART];
+        static uint8_t zon[NPART];
+        if (!zon[part] || (uint32_t)(now - drn_last[part]) > 500u)
+            zs[part] = zc;
+        zs[part] += (zc - zs[part]) / 4;
+        zon[part] = 1;
+        drn_last[part] = now;
+        zc = zs[part];
     }
     {   /* the sky and the floor: gradients, the horizon's glow */
         int32_t y;
@@ -886,18 +911,6 @@ static void graph_drone(const track_t *t, uint16_t c)
         uint32_t inc = (uint32_t)(((uint64_t)pitch_inc(960u + (uint32_t)(iv * 16)) * 119304647u) / pitch_inc(960u));
         uint32_t rate = inc / 140u + (uint32_t)(det * 42950), off0 = o * 0x28F5C28Fu, wob = 0;
         uint16_t col;
-        if (!curtain_done && z0 < zc) {                /* the curtain, once the lanes behind it are drawn */
-            int32_t s = drn_s(zc), hw = DRN_HW * s >> 12, fy = drn_fy(zc), top = fy - (70 * s >> 12), g;
-            curtain_done = 1;
-            if (zc > 0 && zc < 1100) {
-                if (ft != 2u)
-                    drn_tint(DRN_CX - hw, top, DRN_CX + hw, fy + 1, colour ? P.mist : veil_of(), colour ? 36 : 55);
-                for (g = res / 40; g > 0; g--)
-                    cv_rect(DRN_CX - hw, top - g, 2 * hw, 1, colour ? drn_mix(P.edge, P.haze, 30 + g * 18)
-                                                                     : ux_mix(T_ACCENT, T_SURF, 45 + g * 15));
-                cv_rect(DRN_CX - hw, top, 2 * hw, ft == 3u ? 2 : 1, P.edge);
-            }
-        }
         cutside = ft == 2u ? z0 < zc : ft == 1u ? (z0 < zc ? zc - z0 : z0 - zc) > band * 40 : z0 > zc;
         if (colour)
             col = o == 6u ? P.sub : drn_spectrum(nl > 1u ? (int32_t)r * 1023 / (int32_t)(nl - 1u) : 300);
@@ -908,7 +921,7 @@ static void graph_drone(const track_t *t, uint16_t c)
         if (o < 6u && ov && drift)                     /* DRFT: the walk of this oscillator, a phase wobble */
             wob = (uint32_t)((ov->w[o] * drift) << 9);
         for (d = 3; d >= 0; d--) {                     /* the slices: 180, 120, 60 ms ago (a little farther), now */
-            int32_t z = z0 + d * 26, s = drn_s(z), hw = DRN_HW * s >> 12, fy = drn_fy(z), lift = 8 * s >> 12;
+            int32_t z = z0 + d * 26, s = drn_s(z), hw = (DRN_HW * 7 / 8) * s >> 12, fy = drn_fy(z), lift = 8 * s >> 12;
             int32_t a = L.amp * s >> 12, x, px = 0, py = 0, gtop, gh, gi;
             uint32_t tt = now - (uint32_t)d * 60u, ph = tt * rate + off0 + wob, sph = tt * (rate / 2u);
             uint16_t lc = d ? (colour ? drn_mix(col, P.floor1, 22 + 16 * d) : ux_mix(col, T_SURF, 25 + 18 * d)) : col;
@@ -947,15 +960,8 @@ static void graph_drone(const track_t *t, uint16_t c)
             cv_rect(DRN_CX - hw, fy, 2 * hw, 1, colour ? drn_mix(lc, P.floor1, 50) : ux_mix(lc, T_SURF, 50));
         }
     }
-    if (!curtain_done && zc > 0 && zc < 1100) {        /* the curtain in front of every lane */
-        int32_t s = drn_s(zc), hw = DRN_HW * s >> 12, fy = drn_fy(zc), top = fy - (70 * s >> 12), g;
-        if (ft != 2u)
-            drn_tint(DRN_CX - hw, top, DRN_CX + hw, fy + 1, colour ? P.mist : veil_of(), colour ? 36 : 55);
-        for (g = res / 40; g > 0; g--)
-            cv_rect(DRN_CX - hw, top - g, 2 * hw, 1, colour ? drn_mix(P.edge, P.haze, 30 + g * 18)
-                                                             : ux_mix(T_ACCENT, T_SURF, 45 + g * 15));
-        cv_rect(DRN_CX - hw, top, 2 * hw, ft == 3u ? 2 : 1, P.edge);
-    }
+    drn_cutline(zc, res, ft, colour, &P, now);         /* the cutoff, over everything */
+    (void)curtain_done;
 }
 
 /* The FM charts' parts: an operator box 21 x 17 (rows 23 px apart, columns 24), junction dots, Manhattan routes */
