@@ -98,6 +98,67 @@ int main(void)
         blocks(0, 40);
         check("MONO: the latched key again lets it go, nothing latched under it sounds", gated(g4) == 0u && gated(c4) == 0u);
     }
+    {   /* hits are not latched: DRUM (LOFI DEEP) and SLICE in MODE ONE strike again on every press, HOLD or not */
+        uint32_t e, k, r;
+        for (r = 0; r < 2u; r++) {
+            uint32_t n = 0, pi = 0;
+            e = r ? 0u : ENGI_DRUM;
+            if (r) {
+                for (e = 0; e < NENGINES && !str_eq(ENGINES[e]->name, "SLICE"); e++)
+                    ;
+                if (e == NENGINES)
+                    break;                          /* (FELUCCA_SLICE=0) */
+                for (pi = 0; pi < ENGINES[e]->npresets && ENGINES[e]->presets[pi].e[4] != 0; pi++)
+                    ;                               /* a preset in MODE ONE (CHOP) */
+            } else
+                pi = 1;                             /* LOFI DEEP */
+            for (k = 0; k < NVOICE; k++)
+                inst.v[k].active = 0;
+            for (k = 0; k < P_E0; k++) inst.p[k] = TP[k].def;
+            inst.eng_req = inst.engine = (uint8_t)e;
+            eng_mem_claim(&inst);
+            host_preset(&inst, e, pi);
+            inst.p[P_AHOLD] = 1;
+            blocks(0, 8);
+            for (k = 0; k < 4u; k++) {                  /* four quick presses (~50 ms apart) */
+                uint32_t a = vage;
+                blocks(1u << 7, 4);
+                n += vage != a;
+                blocks(0, 64);
+            }
+            check(r ? "SLICE MODE ONE under HOLD: 4 quick presses of a key, 4 hits, nothing latched"
+                    : "DRUM under HOLD: 4 quick presses of the kick, 4 hits, nothing latched",
+                  n == 4u && !hold_has(&inst, kb_map(&inst, 7)));
+        }
+    }
+    {   /* a latched note that has ended on its own (SUS 0, decayed to silence): its key strikes it again */
+        uint32_t k, a, n;
+        for (k = 0; k < NVOICE; k++)
+            inst.v[k].active = 0;
+        for (k = 0; k < P_E0; k++) inst.p[k] = TP[k].def;
+        inst.eng_req = inst.engine = ENGI_DRONE;
+        eng_mem_claim(&inst);
+        host_preset(&inst, ENGI_DRONE, 0);
+        inst.p[P_AHOLD] = 1;
+        inst.p[P_ATK] = 0;
+        inst.p[P_DEC] = 30;
+        inst.p[P_SUS] = 0;
+        blocks(0, 8);
+        c4 = kb_map(&inst, 7);
+        blocks(1u << 7, 4);
+        blocks(0, 4);
+        for (n = 0; n < 4000u && hold_sounding(&inst, c4); n++)
+            blocks(0, 1);
+        check("SUS 0: the latched note decays to silence, still latched", n < 4000u && hold_has(&inst, c4));
+        a = vage;
+        blocks(1u << 7, 4);
+        check("SUS 0: its key again strikes it anew (not a silent let go), latched again",
+              vage != a && gated(c4) == 1u && hold_has(&inst, c4) && hold_sounding(&inst, c4));
+        blocks(0, 4);
+        blocks(1u << 7, 4);
+        check("SUS 0: pressed again while it sounds: it lets go", gated(c4) == 0u && !hold_has(&inst, c4));
+        blocks(0, 4);
+    }
     printf("hold: %s\n", bad ? "FAILED" : "all ok");
     return bad != 0;
 }

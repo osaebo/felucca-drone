@@ -75,12 +75,19 @@ There are four kits after DRUM KIT: LOFI DEEP, SUB THUMP, DUST BOWL and TAPE TOM
   SUB THUMP, a dark soft drive.
 - **Pattern:** they suggest the new pattern DEEP (SAVE > PHRASES 14): kicks, the low snare and toms, no hats.
 
+Re-hits (every DRUM kit): striking a drum again while it still rings restarts it at once, as loud as the first hit.
+The hit before no longer stops with a jump: where it stopped fades out over about 3 ms under the new hit, so a long
+deep kick re-hit quickly has no click (`tests/rehit_test.c`).
+
 ## HOLD (any engine)
 
 Set ARP 2 > HOLD to ON while ARP MODE is OFF:
 - A key latches its note, and letting go of the key does nothing.
-- Pressing the same key again releases that note.
+- Pressing the same key again releases that note. If that note has already ended on its own (a sample that played
+  out, a SUS 0 envelope that decayed to silence), the press plays it again instead, so a press always sounds.
+- Hits are never latched: on DRUM, and on SLICE in MODE ONE, every press is a new hit, with HOLD on or off.
 - Turning HOLD off, turning the ARP on, or a panic releases every latched note.
+- HOLD is a track setting and stays on when you load another sound or engine on that track.
 
 With the ARP on, HOLD is the arpeggiator's latch, as before.
 
@@ -98,7 +105,7 @@ opens here.
 - **GitHub:** push this repo (branch `drone`) to GitHub, or run "build DRONE firmware" from the Actions tab. The
   package is the run's artifact.
 - **Linux or WSL:** run `tools/build_drone.sh`. It fetches the JieLi toolchain and the AC79 SDK the first time.
-- **Install:** run `pip install mido python-rtmidi` and then `python3 tools/fm1_install.py build/felucca-1.5.1-dr2.fwsc`.
+- **Install:** run `pip install mido python-rtmidi` and then `python3 tools/fm1_install.py build/felucca-1.5.1-dr4.fwsc`.
 
 Going back: the installer's "Return to official V15", or M-VAVE's M-UPGRADE. Installing firmware is at your own risk.
 

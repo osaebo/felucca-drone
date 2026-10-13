@@ -10,7 +10,9 @@
  * Each sequence runs in its own fork()ed child from boot state; its mix is one 64-bit FNV-1a hash. The file
  * holds the hashes of 1.4 (the engines' own arrays, before the shared region): any difference fails. The 380
  * sequences that play SAMPLE's PIANO (SAMPLE presets 0 / 1, GRAIN's FROZEN / SHIMMER) were rewritten in 1.5, when
- * PIANO went back to the full piano of 1.1.5; the other 340 are 1.4's.
+ * PIANO went back to the full piano of 1.1.5; the other 340 are 1.4's. The DRONE fork's DRUM re-hit declick
+ * (eng_drum.c drum_bleed) rewrote the 336 A -> B -> A sequences (part 3 plays DRUM there and strikes its TOM lane
+ * again while it rings); with the declick off they hash as before, 720 of 720.
  * env: GOLDEN_UPDATE=1 rewrites GOLDEN_FILE (only with a reason: a switch is to sound as it did). */
 #define main hostsim_main
 #include "hostsim.c"

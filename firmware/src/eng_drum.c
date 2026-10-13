@@ -57,7 +57,18 @@ typedef struct {
     uint8_t role;                /* the drum struck (DVT_*) */
     int8_t st;                   /* its semitones from the designed pitch (the GM map) */
     uint8_t pad;
+    int32_t last;                /* the DRONE fork: the lane's last sample (drum_render) */
+    int32_t bleed;               /* a re-hit's declick: the sample the hit before stopped at */
+    uint16_t bleed_n, bleed_pad; /* its samples left (DRUM_XF .. 0) */
 } drum_lane_t;
+/* A lane struck again while it rings restarts its drum from rest at once (its onset as clear as a first hit's: "stop
+ * it and start it again"), and the sample the hit before stopped at fades to 0 under the new hit over DRUM_XF
+ * samples (~3 ms, smoothstep), instead of a jump: on a long deep kick that jump was a click 20 dB over the hit's own
+ * onset above 600 Hz. As clean as rendering the old hit's real tail under the new one (measured), at no cost */
+#ifndef DRUM_XF
+#define DRUM_XF 128u                                     /* 4 blocks of CTL 32 */
+#endif
+#define DRUM_XF_R (32768u * 256u / DRUM_XF)              /* Q15 per sample left, x 256 */
 
 ENG_MEM_FITS("DRUM", sizeof(drum_lane_t) * DV_NLANE);
 /* 1.4.1: each part's lanes muted (bit l: lane l), the EDIT layer's black keys 1..8 (ui_layer.c EQA_DRUM): a channel
@@ -219,6 +230,10 @@ static void drum_note_on(track_t *t, voice_t *v)
     if (L->owner == i + 1u)                              /* this voice played another lane: it stops there */
         L->owner = 0;
     L = &K[lane];
+    if (L->v.live && !L->v.trig) {                       /* still ringing: where it stopped fades out */
+        L->bleed = clamp(L->last, -32767, 32767);
+        L->bleed_n = DRUM_XF;
+    }
     if (L->role != role || L->v.type != dv_run_type(role)) {   /* another drum on this lane: from rest */
         dv_init(&L->v, role);
         L->key.type = 0xFF;
@@ -252,6 +267,19 @@ static int32_t drum_amp(track_t *t, voice_t *v, int32_t adsr)
     }
     v->env = 1 << 24;
     return 32767;
+}
+
+/* a re-hit's declick into y: the hit before's last sample, from 1 to 0 over DRUM_XF samples, smoothstep (no corner
+ * where the fade starts or ends) */
+static __attribute__((noinline)) void drum_bleed(drum_lane_t *L, int32_t *y, uint32_t n)
+{
+    uint32_t i, left = L->bleed_n;
+    for (i = 0; i < n && left; i++, left--) {
+        int32_t r = (int32_t)((left * DRUM_XF_R) >> 8);  /* Q15, 1 .. 0 */
+        int32_t g = (int32_t)(((r * r) >> 15) * (3 * 32768 - 2 * r) >> 15);
+        y[i] += (L->bleed * g) >> 15;
+    }
+    L->bleed_n = (uint16_t)left;
 }
 
 static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
@@ -291,6 +319,9 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     if (dv_uses_metal(L->c.type) && (L->v.live || L->v.trig))
         dv_metal_run(&L->mb, mb, n);
     dv_run(&L->c, &L->v, mb, y, n);
+    if (L->bleed_n)
+        drum_bleed(L, y, n);
+    L->last = y[n - 1];
     if ((drum_mute[(uint32_t)(t - trk) % NPART] >> ((uint32_t)v->s[0] & (DV_NLANE - 1u))) & 1u)
         return;                                          /* (a muted lane rings on unheard) */
     if (drv > 0) {                                       /* DRV: x1..x4 into the soft clip, the level kept (Q12) */

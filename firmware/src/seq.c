@@ -612,10 +612,36 @@ static __attribute__((noinline)) void cin_keep(track_t *t, uint32_t note, uint32
  * lets it go; letting go of a key does nothing. On a MONO / LEGATO / UNISON track one note is latched at a time: a
  * new key takes over (legato, as a held key would) and the note before lets go, so a priority (LOW, HIGH) never
  * leaves a new key silent under an old latched one. HOLD off, the ARP on, or a panic: every latched note lets go
- * (hold_block). A bit per note and track */
+ * (hold_block). A bit per note and track.
+ * Hits are not latched: DRUM (engine_t.oneshot) and SLICE in MODE ONE play to their end whatever the key does, so
+ * there every press is a new hit, HOLD or not. A latched note that has ended on its own (a sample played out, a
+ * SUS 0 envelope decayed to silence) is struck again by its key, not let go: a press always sounds */
 static uint32_t hold_lat[NTRK][4];
-static int hold_on(const track_t *t) { return t->p[P_AHOLD] && !t->p[P_AMODE]; }
+static int hold_hits(const track_t *t)
+{
+    const engine_t *e = ENGINES[eng_idx(t->eng_req)];
+#if FELUCCA_SLICE
+    if (e == &ENG_SLICE && t->p[P_E4] == SLC_ONE)
+        return 1;
+#endif
+    return e->oneshot;
+}
+static int hold_on(const track_t *t) { return t->p[P_AHOLD] && !t->p[P_AMODE] && !hold_hits(t); }
 static int hold_has(const track_t *t, uint32_t n) { return (hold_lat[trk_index(t)][(n >> 5) & 3u] >> (n & 31u)) & 1u; }
+/* a latched note still sounding as a held note: a gated voice on it, in its attack, or above -48 dB */
+static int hold_sounding(const track_t *t, uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < NVOICE; i++) {
+        const voice_t *v = &t->v[i];
+        if (v->active && v->gate && v->note == n && (v->stage == 1u || (v->stage == 2u && v->env >= (1 << 16))))
+            return 1;
+    }
+    for (i = 0; i < t->xp_n; i++)                   /* waiting for an engine switch's fade */
+        if (t->xp_note[i] == n)
+            return 1;
+    return 0;
+}
 static void trk_note_off(track_t *t, uint32_t note);
 static void hold_block(track_t *t, int panic)
 {
@@ -639,8 +665,11 @@ static void input_on(track_t *t, uint32_t note, uint32_t vel)
         uint32_t *l = hold_lat[trk_index(t)];
         if ((l[note >> 5] >> (note & 31u)) & 1u) {
             l[note >> 5] &= ~(1u << (note & 31u));
+            int ended = !hold_sounding(t, note);
             trk_note_off(t, note);
-            return;
+            if (!ended)
+                return;                             /* it had ended: let go (a LEGATO voice would not start
+                                                     * again under its own gate), struck again, latched anew */
         }
         if (t->p[P_VOICE] != V_POLY)
             for (w = 0; w < 4u; w++) {
